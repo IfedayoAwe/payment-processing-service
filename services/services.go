@@ -12,14 +12,14 @@ type Services struct {
 	DB      *sql.DB
 	Queries gen.Querier
 	Config  *config.Config
-	Redis   *utils.Redis
+	Cache   utils.Cache
 }
 
-func NewServices(db *sql.DB, queries gen.Querier, cfg *config.Config, redis *utils.Redis) *Services {
+func NewServices(db *sql.DB, queries gen.Querier, cfg *config.Config, cache utils.Cache) *Services {
 	return &Services{
 		DB:      db,
 		Queries: queries,
 		Config:  cfg,
-		Redis:   redis,
+		Cache:   cache,
 	}
 }

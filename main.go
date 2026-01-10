@@ -36,16 +36,16 @@ func run() error {
 	// Initialize DB and queries
 	queries, dbConn := db.InitDBWithDeps(cfg, db.DefaultDependencies)
 
-	// Initialize Redis
-	redisClient := setupRedis(&cfg)
+	// Initialize Redis (cache)
+	cache := setupRedis(&cfg)
 	defer func() {
-		if err := redisClient.Close(); err != nil {
-			log.Printf("Error closing redis: %v", err)
+		if err := cache.Close(); err != nil {
+			log.Printf("Error closing cache: %v", err)
 		}
 	}()
 
 	// Init services and handlers
-	services := service.NewServices(dbConn, queries, &cfg, redisClient)
+	services := service.NewServices(dbConn, queries, &cfg, cache)
 	newHandlers := handlers.NewHandlers(services)
 
 	// Init Echo
@@ -71,11 +71,11 @@ func run() error {
 	return e.Start(":" + port)
 }
 
-func setupRedis(cfg *config.Config) *utils.Redis {
-	log.Println("Initializing Redis...", cfg.RedisURL)
+func setupRedis(cfg *config.Config) utils.Cache {
+	log.Println("Initializing Redis cache...", cfg.RedisURL)
 	redis, err := utils.NewRedis(cfg)
 	if err != nil {
-		log.Fatalf("failed to initialize redis: %v", err)
+		log.Fatalf("failed to initialize cache: %v", err)
 	}
 
 	return redis

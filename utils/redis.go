@@ -12,7 +12,7 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
-type RedisClient interface {
+type Cache interface {
 	Set(key string, value any, duration ...time.Duration) error
 	Get(key string, dest any) error
 	Delete(key string) error
