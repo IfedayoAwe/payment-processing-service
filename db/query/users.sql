@@ -1,8 +1,4 @@
 -- name: GetUserByID :one
-SELECT * FROM users
+SELECT user_id, name, type, pin_hash, created_at, updated_at
+FROM users
 WHERE user_id = $1;
-
--- name: CreateUser :one
-INSERT INTO users (user_id)
-VALUES ($1)
-RETURNING *;

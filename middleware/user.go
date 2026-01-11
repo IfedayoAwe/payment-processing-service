@@ -8,8 +8,6 @@ import (
 
 const UserIDKey = "user_id"
 
-// UserIDMiddleware extracts the X-User-ID header and stores it in the context.
-// This is a simple header-based authentication approach for internal services.
 func UserIDMiddleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -24,7 +22,6 @@ func UserIDMiddleware() echo.MiddlewareFunc {
 	}
 }
 
-// GetUserID extracts the user ID from the context set by UserIDMiddleware.
 func GetUserID(c echo.Context) string {
 	userID, ok := c.Get(UserIDKey).(string)
 	if !ok {

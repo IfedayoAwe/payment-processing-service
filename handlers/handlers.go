@@ -4,8 +4,12 @@ import (
 	service "github.com/IfedayoAwe/payment-processing-service/services"
 )
 
-type Handlers struct{}
+type Handlers struct {
+	services *service.Services
+}
 
 func NewHandlers(services *service.Services) *Handlers {
-	return &Handlers{}
+	return &Handlers{
+		services: services,
+	}
 }

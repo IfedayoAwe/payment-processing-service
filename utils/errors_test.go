@@ -36,10 +36,16 @@ func TestErrorHelpers(t *testing.T) {
 			message: "invalid input",
 		},
 		{
-			name:    "NotAuthorizedErr",
-			err:     NotAuthorizedErr("unauthorized"),
-			baseErr: ErrNotAuthorized,
-			message: "unauthorized",
+			name:    "DuplicateKeyErr",
+			err:     DuplicateKeyErr("duplicate key"),
+			baseErr: ErrDuplicatedKey,
+			message: "duplicate key",
+		},
+		{
+			name:    "ServerErr",
+			err:     ServerErr(errors.New("server error")),
+			baseErr: ErrInternal,
+			message: "server error",
 		},
 	}
 

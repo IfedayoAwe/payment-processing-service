@@ -3,13 +3,14 @@ package db
 import (
 	"database/sql"
 	"errors"
-	"log"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/IfedayoAwe/payment-processing-service/config"
 	"github.com/IfedayoAwe/payment-processing-service/db/gen"
+	"github.com/IfedayoAwe/payment-processing-service/utils"
 
 	migrate "github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
@@ -18,7 +19,9 @@ import (
 	_ "github.com/lib/pq"
 )
 
-var logFatalf = log.Fatalf
+var logFatalf = func(format string, v ...interface{}) {
+	utils.Logger.Fatal().Msg(fmt.Sprintf(format, v...))
+}
 
 type Dependencies struct {
 	OpenDB             func(driverName, dataSourceName string) (*sql.DB, error)
@@ -58,7 +61,7 @@ func InitDBWithDeps(cfg config.Config, deps Dependencies) (*gen.Queries, *sql.DB
 
 	applyMigrations(migrator)
 
-	log.Println("Migrations applied successfully. SQLC client initialized.")
+	utils.Logger.Info().Msg("Migrations applied successfully. SQLC client initialized.")
 	return gen.New(dbConn), dbConn
 }
 
@@ -79,7 +82,7 @@ func openAndPingDB(dsn string, deps Dependencies) *sql.DB {
 		if err = deps.PingDB(dbConn); err == nil {
 			return dbConn
 		}
-		log.Printf("Database ping failed (attempt %d): %v; retrying in %s...", i, err, retryDelay)
+		utils.Logger.Warn().Err(err).Int("attempt", i).Dur("retry_delay", retryDelay).Msg("Database ping failed, retrying")
 		time.Sleep(retryDelay)
 	}
 
@@ -119,7 +122,7 @@ func setupMigrationDriverWithRetry(db *sql.DB, deps Dependencies) database.Drive
 		if err == nil {
 			return drv
 		}
-		log.Printf("postgres.WithInstance failed (attempt %d): %v; retrying in %s...", i, err, retryDelay)
+		utils.Logger.Warn().Err(err).Int("attempt", i).Dur("retry_delay", retryDelay).Msg("postgres.WithInstance failed, retrying")
 		time.Sleep(retryDelay)
 	}
 
@@ -141,7 +144,7 @@ func setupMigratorWithRetry(path string, drv database.Driver, deps Dependencies)
 		if err == nil {
 			return m
 		}
-		log.Printf("migrate.NewWithDatabaseInstance failed (attempt %d): %v; retrying in %s...", i, err, retryDelay)
+		utils.Logger.Warn().Err(err).Int("attempt", i).Dur("retry_delay", retryDelay).Msg("migrate.NewWithDatabaseInstance failed, retrying")
 		time.Sleep(retryDelay)
 	}
 
@@ -155,12 +158,12 @@ func applyMigrations(m Migrator) {
 	}
 
 	if version, dirty, err := m.Version(); err == nil && dirty {
-		log.Printf("Detected dirty migration version %d; forcing state to %d", version, version)
+		utils.Logger.Warn().Uint("version", version).Msg("Detected dirty migration version, forcing state")
 		if fErr := m.Force(int(version)); fErr != nil {
 			logFatalf("migrate.Force(%d) failed: %v", version, fErr)
 		}
 	} else if err != nil {
-		log.Printf("migrator.Version failed: %v", err)
+		utils.Logger.Warn().Err(err).Msg("migrator.Version failed")
 	}
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {

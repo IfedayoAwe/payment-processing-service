@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,7 +18,7 @@ func TestSuccess(t *testing.T) {
 
 	data := map[string]string{"key": "value"}
 	err := Success(c, data, "Success message")
-	
+
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), "Success message")
@@ -32,7 +33,7 @@ func TestCreated(t *testing.T) {
 
 	data := map[string]string{"id": "123"}
 	err := Created(c, data, "Resource created")
-	
+
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusCreated, rec.Code)
 	assert.Contains(t, rec.Body.String(), "Resource created")
@@ -57,9 +58,14 @@ func TestHandleError(t *testing.T) {
 			statusCode: http.StatusBadRequest,
 		},
 		{
-			name:       "Unauthorized",
-			err:        NotAuthorizedErr("unauthorized"),
-			statusCode: http.StatusUnauthorized,
+			name:       "Conflict",
+			err:        DuplicateKeyErr("duplicate key"),
+			statusCode: http.StatusConflict,
+		},
+		{
+			name:       "InternalError",
+			err:        ServerErr(errors.New("internal error")),
+			statusCode: http.StatusInternalServerError,
 		},
 	}
 

@@ -12,7 +12,6 @@ var (
 	validate   *validator.Validate
 )
 
-// InitValidator initializes the validator with English translations
 func InitValidator() *validator.Validate {
 	if validate == nil {
 		validate = validator.New()
@@ -27,7 +26,6 @@ func InitValidator() *validator.Validate {
 	return validate
 }
 
-// GetTranslator returns the translator instance
 func GetTranslator() ut.Translator {
 	if translator == nil {
 		InitValidator()
@@ -35,7 +33,6 @@ func GetTranslator() ut.Translator {
 	return translator
 }
 
-// FormatValidationErrors converts validator.ValidationErrors to a map of field -> error message
 func FormatValidationErrors(err error) map[string]string {
 	validationErrors, ok := err.(validator.ValidationErrors)
 	if !ok {
@@ -48,7 +45,6 @@ func FormatValidationErrors(err error) map[string]string {
 	errors := make(map[string]string)
 
 	for _, e := range validationErrors {
-		// Use the translated error message
 		errors[e.Field()] = e.Translate(trans)
 	}
 

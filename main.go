@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"context"
 
 	"github.com/IfedayoAwe/payment-processing-service/config"
 	"github.com/IfedayoAwe/payment-processing-service/db"
@@ -18,65 +18,60 @@ type CustomValidator struct {
 	validator *validator.Validate
 }
 
-// Validate implements echo.Validator interface
 func (cv *CustomValidator) Validate(i any) error {
 	return cv.validator.Struct(i)
 }
 
 func main() {
+	utils.InitLogger()
+	logger := utils.Logger
+
 	if err := run(); err != nil {
-		log.Fatalf("server error: %v", err)
+		logger.Fatal().Err(err).Msg("server error")
 	}
 }
 
 func run() error {
-	// Load config
+	logger := utils.Logger
 	cfg := config.Load()
 
-	// Initialize DB and queries
 	queries, dbConn := db.InitDBWithDeps(cfg, db.DefaultDependencies)
 
-	// Initialize Redis (cache)
-	cache := setupRedis(&cfg)
+	redisClient, err := setupRedis(&cfg)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("failed to initialize redis")
+	}
 	defer func() {
-		if err := cache.Close(); err != nil {
-			log.Printf("Error closing cache: %v", err)
+		if err := redisClient.Close(); err != nil {
+			logger.Error().Err(err).Msg("error closing redis")
 		}
 	}()
 
-	// Init services and handlers
-	services := service.NewServices(dbConn, queries, &cfg, cache)
+	services := service.NewServices(dbConn, queries, &cfg, redisClient.GetClient())
 	newHandlers := handlers.NewHandlers(services)
 
-	// Init Echo
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	services.StartWorkers(ctx)
+
 	e := echo.New()
 
-	// Initialize validator with translations
 	validate := utils.InitValidator()
 	e.Validator = &CustomValidator{validator: validate}
-
-	// Custom HTTP error handler to handle validation errors
 	e.HTTPErrorHandler = utils.HTTPErrorHandler
 
-	// Register routes
 	routes.Register(e, &cfg, newHandlers)
 
-	// Determine port
 	port := cfg.Port
 	if port == "" {
 		port = "8080"
 	}
-	log.Printf("Payment Processing Service running on port %s", port)
+	logger.Info().Str("port", port).Msg("Payment Processing Service running")
 
 	return e.Start(":" + port)
 }
 
-func setupRedis(cfg *config.Config) utils.Cache {
-	log.Println("Initializing Redis cache...", cfg.RedisURL)
-	redis, err := utils.NewRedis(cfg)
-	if err != nil {
-		log.Fatalf("failed to initialize cache: %v", err)
-	}
-
-	return redis
+func setupRedis(cfg *config.Config) (*utils.Redis, error) {
+	return utils.NewRedis(cfg)
 }

@@ -11,12 +11,10 @@ import (
 )
 
 func Register(e *echo.Echo, cfg *config.Config, handlers *handlers.Handlers) {
-	// Health Check
 	e.GET("/health", func(c echo.Context) error {
 		return c.String(http.StatusOK, "Ok")
 	})
 
-	// ReDoc UI - serves the OpenAPI spec via ReDoc
 	e.GET("/docs", func(c echo.Context) error {
 		return c.HTML(http.StatusOK, `<!DOCTYPE html>
 <html>
@@ -36,28 +34,33 @@ func Register(e *echo.Echo, cfg *config.Config, handlers *handlers.Handlers) {
 </html>`)
 	})
 
-	// OpenAPI JSON endpoint
 	e.GET("/docs/openapi.json", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, getOpenAPISpec())
 	})
 
 	api := e.Group("/api")
 	api.Use(emw.Logger(), emw.Recover())
-
-	// Protected Routes - require X-User-ID header
 	api.Use(middleware.UserIDMiddleware())
 
-	// Register payment routes
 	RegisterPaymentRoutes(api, handlers)
 }
 
 func RegisterPaymentRoutes(api *echo.Group, handlers *handlers.Handlers) {
-	// Payment routes will be added here
-	// Examples:
-	// api.POST("/payments/internal", handlers.Payment.CreateInternalPayment)
-	// api.POST("/payments/external", handlers.Payment.CreateExternalPayment)
-	// api.GET("/payments/:id", handlers.Payment.GetPayment)
-	// api.GET("/payments", handlers.Payment.ListPayments)
+	paymentHandler := handlers.Payment()
+	webhookHandler := handlers.Webhook()
+	nameEnquiryHandler := handlers.NameEnquiry()
+
+	api.GET("/exchange-rate", paymentHandler.GetExchangeRate)
+	api.GET("/wallets", paymentHandler.GetUserWallets)
+	api.GET("/transactions", paymentHandler.GetTransactionHistory)
+	api.POST("/payments/internal", paymentHandler.CreateInternalTransfer)
+	api.POST("/payments/external", paymentHandler.CreateExternalTransfer)
+	api.POST("/payments/:id/confirm", paymentHandler.ConfirmTransaction)
+	api.GET("/payments/:id", paymentHandler.GetTransaction)
+
+	api.POST("/webhooks/:provider", webhookHandler.ReceiveWebhook)
+
+	api.POST("/name-enquiry", nameEnquiryHandler.EnquireAccountName)
 }
 
 func getOpenAPISpec() map[string]interface{} {
