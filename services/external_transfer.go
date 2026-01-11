@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -17,11 +18,11 @@ import (
 )
 
 type ExternalTransferService interface {
-	CreateExternalTransfer(ctx context.Context, userID string, bankAccountID string, fromCurrency money.Currency, toAmount money.Money, exchangeRate float64, idempotencyKey string) (*models.Transaction, error)
+	CreateExternalTransfer(ctx context.Context, userID string, toAccountNumber string, toBankCode string, fromCurrency money.Currency, toAmount money.Money, exchangeRate float64, idempotencyKey string) (*models.Transaction, error)
 }
 
 type externalTransferService struct {
-	queries  *gen.Queries
+	queries  gen.Querier
 	db       *sql.DB
 	wallet   WalletService
 	ledger   LedgerService
@@ -40,7 +41,7 @@ func (s *Services) ExternalTransfer() ExternalTransferService {
 	}
 }
 
-func (ets *externalTransferService) CreateExternalTransfer(ctx context.Context, userID string, bankAccountID string, fromCurrency money.Currency, toAmount money.Money, exchangeRate float64, idempotencyKey string) (*models.Transaction, error) {
+func (ets *externalTransferService) CreateExternalTransfer(ctx context.Context, userID string, toAccountNumber string, toBankCode string, fromCurrency money.Currency, toAmount money.Money, exchangeRate float64, idempotencyKey string) (*models.Transaction, error) {
 	if !toAmount.IsPositive() {
 		return nil, utils.BadRequestErr("amount must be positive")
 	}
@@ -51,19 +52,6 @@ func (ets *externalTransferService) CreateExternalTransfer(ctx context.Context, 
 	}
 	if err != nil && err != sql.ErrNoRows {
 		return nil, utils.ServerErr(fmt.Errorf("check idempotency: %w", err))
-	}
-
-	bankAccount, err := ets.getBankAccount(ctx, bankAccountID)
-	if err != nil {
-		return nil, err
-	}
-
-	if bankAccount.Currency != toAmount.Currency.String() {
-		return nil, utils.BadRequestErr("bank account currency mismatch")
-	}
-
-	if bankAccount.UserID != userID {
-		return nil, utils.BadRequestErr("bank account does not belong to user")
 	}
 
 	fromWallet, err := ets.wallet.GetWalletByUserAndCurrency(ctx, userID, fromCurrency)
@@ -107,14 +95,23 @@ func (ets *externalTransferService) CreateExternalTransfer(ctx context.Context, 
 		return nil, utils.ServerErr(fmt.Errorf("create transaction: %w", err))
 	}
 
+	recipientDetails := map[string]string{
+		"account_number": toAccountNumber,
+		"bank_code":      toBankCode,
+	}
+	recipientJSON, err := json.Marshal(recipientDetails)
+	if err != nil {
+		return nil, utils.ServerErr(fmt.Errorf("marshal recipient details: %w", err))
+	}
+
 	err = ets.queries.UpdateTransactionWithProvider(ctx, gen.UpdateTransactionWithProviderParams{
 		ProviderName:      sql.NullString{Valid: false},
-		ProviderReference: sql.NullString{String: bankAccountID, Valid: true},
+		ProviderReference: sql.NullString{String: string(recipientJSON), Valid: true},
 		Status:            string(models.TransactionStatusInitiated),
 		ID:                transaction.ID,
 	})
 	if err != nil {
-		return nil, utils.ServerErr(fmt.Errorf("store bank account ID: %w", err))
+		return nil, utils.ServerErr(fmt.Errorf("store recipient details: %w", err))
 	}
 
 	return &models.Transaction{
@@ -158,7 +155,12 @@ func (ets *externalTransferService) confirmExternalTransfer(ctx context.Context,
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	queries := ets.queries.WithTx(tx)
+	var queries gen.Querier
+	if q, ok := ets.queries.(*gen.Queries); ok {
+		queries = q.WithTx(tx)
+	} else {
+		queries = ets.queries
+	}
 
 	lockedWallet, err := ets.wallet.LockWalletForUpdate(ctx, tx, fromWallet.ID)
 	if err != nil {
@@ -178,6 +180,23 @@ func (ets *externalTransferService) confirmExternalTransfer(ctx context.Context,
 		return nil, err
 	}
 
+	toCurrency, err := money.ParseCurrency(transaction.Currency)
+	if err != nil {
+		return nil, utils.ServerErr(fmt.Errorf("parse transaction currency: %w", err))
+	}
+
+	companyWallet, err := ets.wallet.LockWalletByUserAndCurrency(ctx, tx, "company_grey", toCurrency)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, utils.ServerErr(fmt.Errorf("company wallet not found for currency %s", toCurrency))
+		}
+		return nil, utils.ServerErr(fmt.Errorf("get company wallet: %w", err))
+	}
+
+	if err := ets.ledger.CreateCreditEntry(ctx, tx, companyWallet.ID, transaction.ID, transaction.Amount, toCurrency); err != nil {
+		return nil, err
+	}
+
 	newBalance, err := ets.ledger.GetWalletBalance(ctx, tx, lockedWallet.ID, fromCurrency)
 	if err != nil {
 		return nil, err
@@ -188,6 +207,18 @@ func (ets *externalTransferService) confirmExternalTransfer(ctx context.Context,
 		ID:      lockedWallet.ID,
 	}); err != nil {
 		return nil, utils.ServerErr(fmt.Errorf("update wallet balance: %w", err))
+	}
+
+	companyBalance, err := ets.ledger.GetWalletBalance(ctx, tx, companyWallet.ID, toCurrency)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := queries.UpdateWalletBalance(ctx, gen.UpdateWalletBalanceParams{
+		Balance: companyBalance,
+		ID:      companyWallet.ID,
+	}); err != nil {
+		return nil, utils.ServerErr(fmt.Errorf("update company wallet balance: %w", err))
 	}
 
 	if err := queries.UpdateTransactionStatus(ctx, gen.UpdateTransactionStatusParams{
@@ -210,28 +241,55 @@ func (ets *externalTransferService) confirmExternalTransfer(ctx context.Context,
 	}
 
 	if !transaction.ProviderReference.Valid {
-		return nil, utils.ServerErr(fmt.Errorf("bank account ID not found in transaction"))
+		return nil, utils.ServerErr(fmt.Errorf("recipient details not found in transaction"))
 	}
 
-	bankAccountID := transaction.ProviderReference.String
+	var recipientDetails map[string]string
+	if err := json.Unmarshal([]byte(transaction.ProviderReference.String), &recipientDetails); err != nil {
+		return nil, utils.ServerErr(fmt.Errorf("unmarshal recipient details: %w", err))
+	}
+
+	accountNumber, ok := recipientDetails["account_number"]
+	if !ok {
+		return nil, utils.ServerErr(fmt.Errorf("account_number not found in recipient details"))
+	}
+
+	bankCode, ok := recipientDetails["bank_code"]
+	if !ok {
+		return nil, utils.ServerErr(fmt.Errorf("bank_code not found in recipient details"))
+	}
 
 	payload := queue.PayoutJobPayload{
 		TransactionID: transaction.ID,
 		Amount:        transaction.Amount,
 		Currency:      transaction.Currency,
-		BankAccountID: bankAccountID,
+		AccountNumber: accountNumber,
+		BankCode:      bankCode,
 	}
+
+	utils.Logger.Info().
+		Str("transaction_id", transaction.ID).
+		Str("account_number", accountNumber).
+		Str("bank_code", bankCode).
+		Msg("enqueuing payout job")
 
 	if err := ets.queue.Enqueue(ctx, queue.JobTypePayout, payload); err != nil {
 		return nil, utils.ServerErr(fmt.Errorf("enqueue payout job: %w", err))
 	}
+
+	utils.Logger.Info().
+		Str("transaction_id", transaction.ID).
+		Msg("payout job enqueued successfully")
 
 	updatedTransaction, err := ets.queries.GetTransactionByID(ctx, transaction.ID)
 	if err != nil {
 		return nil, utils.ServerErr(fmt.Errorf("get updated transaction: %w", err))
 	}
 
-	return mapTransaction(updatedTransaction), nil
+	mappedTx := mapTransaction(updatedTransaction)
+	mappedTx.Status = models.TransactionStatusCompleted
+
+	return mappedTx, nil
 }
 
 func (ets *externalTransferService) getTransactionByIdempotencyKey(ctx context.Context, idempotencyKey string) (*models.Transaction, error) {
@@ -244,32 +302,4 @@ func (ets *externalTransferService) getTransactionByIdempotencyKey(ctx context.C
 	}
 
 	return mapTransaction(transaction), nil
-}
-
-func (ets *externalTransferService) getBankAccount(ctx context.Context, bankAccountID string) (*models.BankAccount, error) {
-	bankAccount, err := ets.queries.GetBankAccountByID(ctx, bankAccountID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, utils.NotFoundErr("bank account not found")
-		}
-		return nil, utils.ServerErr(fmt.Errorf("get bank account: %w", err))
-	}
-
-	var accountName *string
-	if bankAccount.AccountName.Valid {
-		accountName = &bankAccount.AccountName.String
-	}
-
-	return &models.BankAccount{
-		ID:            bankAccount.ID,
-		UserID:        bankAccount.UserID,
-		BankName:      bankAccount.BankName,
-		BankCode:      bankAccount.BankCode,
-		AccountNumber: bankAccount.AccountNumber,
-		AccountName:   accountName,
-		Currency:      bankAccount.Currency,
-		Provider:      bankAccount.Provider,
-		CreatedAt:     bankAccount.CreatedAt,
-		UpdatedAt:     bankAccount.UpdatedAt,
-	}, nil
 }

@@ -27,9 +27,15 @@ func (p *DLocalProvider) SupportsCurrency(currency money.Currency) bool {
 func (p *DLocalProvider) SendPayout(ctx context.Context, req PayoutRequest) (*PayoutResponse, error) {
 	time.Sleep(50 * time.Millisecond)
 
-	ref := fmt.Sprintf("DLOCAL-%d", time.Now().UnixNano())
+	var ref ProviderReference
+	if req.ProviderRef != nil {
+		ref = *req.ProviderRef
+	} else {
+		ref = ProviderReference(fmt.Sprintf("DLOCAL-%d", time.Now().UnixNano()))
+	}
+
 	return &PayoutResponse{
-		ProviderRef: ProviderReference(ref),
+		ProviderRef: ref,
 		Status:      "pending",
 	}, nil
 }

@@ -12,10 +12,12 @@ type PayoutRequest struct {
 	Amount      money.Money
 	Destination BankAccount
 	Metadata    map[string]string
+	ProviderRef *ProviderReference
 }
 
 type BankAccount struct {
 	BankName      string
+	BankCode      string
 	AccountNumber string
 	AccountName   string
 	Currency      money.Currency
@@ -54,6 +56,14 @@ type PayoutProvider interface {
 	Provider
 	SendPayout(ctx context.Context, req PayoutRequest) (*PayoutResponse, error)
 	SupportsCurrency(currency money.Currency) bool
+}
+
+type NameEnquiryProvider interface {
+	Provider
 	NameEnquiry(ctx context.Context, req NameEnquiryRequest) (*NameEnquiryResponse, error)
+}
+
+type ExchangeRateProvider interface {
+	Provider
 	GetExchangeRate(ctx context.Context, req ExchangeRateRequest) (*ExchangeRateResponse, error)
 }

@@ -41,6 +41,10 @@ func (s *Services) Queue() queue.Queue {
 	return s.queue
 }
 
+func (s *Services) Queries() *gen.Queries {
+	return s.queries
+}
+
 func (s *Services) StartWorkers(ctx context.Context) {
 	workers := []struct {
 		name   string
@@ -52,6 +56,7 @@ func (s *Services) StartWorkers(ctx context.Context) {
 
 	for _, w := range workers {
 		go func(name string, start func(context.Context) error) {
+			utils.Logger.Info().Str("worker", name).Msg("starting worker")
 			if err := start(ctx); err != nil && err != context.Canceled {
 				utils.Logger.Error().Err(err).Str("worker", name).Msg("worker error")
 			}

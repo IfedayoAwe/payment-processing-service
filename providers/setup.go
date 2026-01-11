@@ -3,8 +3,17 @@ package providers
 func SetupProcessor() *Processor {
 	processor := NewProcessor()
 
-	processor.RegisterPayoutProvider(NewCurrencyCloudProvider())
-	processor.RegisterPayoutProvider(NewDLocalProvider())
+	ccProvider := NewCurrencyCloudProvider()
+	dlocalProvider := NewDLocalProvider()
+
+	processor.RegisterPayoutProvider(ccProvider)
+	processor.RegisterPayoutProvider(dlocalProvider)
+
+	processor.RegisterNameEnquiryProvider(ccProvider)
+	processor.RegisterNameEnquiryProvider(dlocalProvider)
+
+	processor.RegisterExchangeRateProvider(ccProvider)
+	processor.RegisterExchangeRateProvider(dlocalProvider)
 
 	return processor
 }

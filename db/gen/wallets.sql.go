@@ -55,6 +55,7 @@ SELECT
     w.updated_at,
     ba.account_number,
     ba.bank_name,
+    ba.bank_code,
     ba.account_name,
     ba.provider
 FROM wallets w
@@ -73,6 +74,7 @@ type GetUserWalletsWithBankAccountsRow struct {
 	UpdatedAt     time.Time      `db:"updated_at" json:"updated_at"`
 	AccountNumber sql.NullString `db:"account_number" json:"account_number"`
 	BankName      sql.NullString `db:"bank_name" json:"bank_name"`
+	BankCode      sql.NullString `db:"bank_code" json:"bank_code"`
 	AccountName   sql.NullString `db:"account_name" json:"account_name"`
 	Provider      sql.NullString `db:"provider" json:"provider"`
 }
@@ -96,6 +98,7 @@ func (q *Queries) GetUserWalletsWithBankAccounts(ctx context.Context, userID str
 			&i.UpdatedAt,
 			&i.AccountNumber,
 			&i.BankName,
+			&i.BankCode,
 			&i.AccountName,
 			&i.Provider,
 		); err != nil {

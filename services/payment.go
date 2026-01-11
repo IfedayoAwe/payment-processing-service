@@ -19,7 +19,7 @@ import (
 type PaymentService interface {
 	GetExchangeRate(ctx context.Context, fromCurrency, toCurrency money.Currency) (float64, error)
 	CreateInternalTransfer(ctx context.Context, fromUserID string, toAccountNumber string, toBankCode string, fromCurrency money.Currency, toAmount money.Money, idempotencyKey string) (*models.Transaction, error)
-	CreateExternalTransfer(ctx context.Context, userID string, bankAccountID string, fromCurrency money.Currency, toAmount money.Money, idempotencyKey string) (*models.Transaction, error)
+	CreateExternalTransfer(ctx context.Context, userID string, toAccountNumber string, toBankCode string, fromCurrency money.Currency, toAmount money.Money, idempotencyKey string) (*models.Transaction, error)
 	ConfirmTransaction(ctx context.Context, transactionID string, userID string, pin string) (*models.Transaction, error)
 	GetTransactionByID(ctx context.Context, transactionID string) (*models.Transaction, error)
 	GetTransactionByIdempotencyKey(ctx context.Context, idempotencyKey string) (*models.Transaction, error)
@@ -27,7 +27,7 @@ type PaymentService interface {
 }
 
 type paymentService struct {
-	queries          *gen.Queries
+	queries          gen.Querier
 	db               *sql.DB
 	wallet           WalletService
 	ledger           LedgerService
@@ -126,7 +126,12 @@ func (ps *paymentService) processInternalTransferImmediate(ctx context.Context, 
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	queries := ps.queries.WithTx(tx)
+	var queries gen.Querier
+	if q, ok := ps.queries.(*gen.Queries); ok {
+		queries = q.WithTx(tx)
+	} else {
+		queries = ps.queries
+	}
 
 	lockedFromWallet, err := ps.wallet.LockWalletForUpdate(ctx, tx, fromWallet.ID)
 	if err != nil {
@@ -308,12 +313,12 @@ func (ps *paymentService) GetTransactionByIdempotencyKey(ctx context.Context, id
 	return mapTransaction(transaction), nil
 }
 
-func (ps *paymentService) CreateExternalTransfer(ctx context.Context, userID string, bankAccountID string, fromCurrency money.Currency, toAmount money.Money, idempotencyKey string) (*models.Transaction, error) {
+func (ps *paymentService) CreateExternalTransfer(ctx context.Context, userID string, toAccountNumber string, toBankCode string, fromCurrency money.Currency, toAmount money.Money, idempotencyKey string) (*models.Transaction, error) {
 	exchangeRate, err := ps.GetExchangeRate(ctx, fromCurrency, toAmount.Currency)
 	if err != nil {
 		return nil, err
 	}
-	return ps.externalTransfer.CreateExternalTransfer(ctx, userID, bankAccountID, fromCurrency, toAmount, exchangeRate, idempotencyKey)
+	return ps.externalTransfer.CreateExternalTransfer(ctx, userID, toAccountNumber, toBankCode, fromCurrency, toAmount, exchangeRate, idempotencyKey)
 }
 
 func (ps *paymentService) ConfirmTransaction(ctx context.Context, transactionID string, userID string, pin string) (*models.Transaction, error) {
@@ -408,7 +413,12 @@ func (ps *paymentService) confirmInternalTransfer(ctx context.Context, transacti
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	queries := ps.queries.WithTx(tx)
+	var queries gen.Querier
+	if q, ok := ps.queries.(*gen.Queries); ok {
+		queries = q.WithTx(tx)
+	} else {
+		queries = ps.queries
+	}
 
 	lockedFromWallet, err := ps.wallet.LockWalletForUpdate(ctx, tx, fromWallet.ID)
 	if err != nil {

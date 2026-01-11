@@ -46,6 +46,7 @@ SELECT
     w.updated_at,
     ba.account_number,
     ba.bank_name,
+    ba.bank_code,
     ba.account_name,
     ba.provider
 FROM wallets w

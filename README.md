@@ -1,241 +1,498 @@
-# Payment Processing System
+# Payment Processing Service
 
-Multi-currency payment processing system handling payments between internal users and to external accounts in USD, EUR, and GBP.
-
-## Architecture
-
-**Layered Architecture:**
-
-- HTTP API (Echo) → Service Layer → SQLC Queries
-- No repository layer - services use SQLC directly
-- Interfaces defined in same file as implementations
-
-**Key Design Decisions:**
-
-- **Two-Step Payment Flow**: Initiate → Confirm with PIN for security
-- **PIN Validation**: 4-digit numeric PIN stored as bcrypt hash in users table
-- **Transaction Expiration**: Initiated transactions expire after 10 minutes
-- **Double-Entry Ledger**: Immutable ledger entries are the source of truth for balances
-- **Wallet Locking**: `SELECT FOR UPDATE` for concurrent transaction safety
-- **Idempotency**: Required `Idempotency-Key` header for mutation endpoints
-- **Provider Abstraction**: Clean interface with multiple provider support (CurrencyCloud, dLocal)
-- **Async Processing**: Redis queue for external payouts and webhook processing
-- **No Foreign Keys**: App-level referential integrity for better control and performance
+Multi-currency payment processing system handling internal transfers between users and external transfers to bank accounts. Supports USD, EUR, and GBP currencies with exchange rate locking and double-entry ledger accounting.
 
 ## Setup
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Go 1.21+ (for local development)
+
+### Quick Start
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd payment-processing-service
+
+# Start all services (PostgreSQL, Redis, API)
+docker-compose up --build
+
+# The service will automatically:
+# - Run database migrations
+# - Seed test data (2 users with wallets and bank accounts)
+# - Start the API server on http://localhost:8080
+# - Start background workers for async processing
+```
+
+The API will be available at `http://localhost:8080`.
+
+### Test Users
+
+Two test users are automatically seeded:
+
+- **user_1** (John Doe) - PIN: `12345`
+- **user_2** (Jane Doe) - PIN: `12345`
+
+Both users have wallets in USD, EUR, and GBP with initial balances. Use the test endpoint to retrieve full details:
+
+```bash
+GET /api/test/users
+```
+
+This endpoint returns user IDs, PINs, wallet details, bank account information, and balances for easy testing.
+
+## API Usage
+
+### Authentication
+
+All API endpoints (except `/api/test/users`) require the `X-User-ID` header:
+
+```
+X-User-ID: user_1
+```
+
+### Idempotency
+
+All mutation endpoints require the `Idempotency-Key` header to prevent duplicate processing:
+
+```
+Idempotency-Key: unique-key-per-request
+```
+
+### Endpoints
+
+#### 1. Get Test Users
+
+```
+GET /api/test/users
+```
+
+Returns test user data including user IDs, PINs, wallets, bank accounts, and balances. No authentication required.
+
+**Response:**
+
+```json
+{
+	"data": {
+		"users": [
+			{
+				"user_id": "user_1",
+				"name": "John Doe",
+				"pin": "12345",
+				"wallets": [
+					{
+						"id": "wallet_user1_usd",
+						"currency": "USD",
+						"balance": 100.5,
+						"account_number": "1000000001",
+						"bank_name": "Test Bank",
+						"bank_code": "044",
+						"account_name": "John Doe",
+						"provider": "currencycloud"
+					}
+				]
+			}
+		]
+	}
+}
+```
+
+#### 2. Name Enquiry
+
+```
+POST /api/name-enquiry
+Headers: X-User-ID
+```
+
+Check if an account number and bank code belong to an internal user or external account.
+
+**Request:**
+
+```json
+{
+	"account_number": "1000000001",
+	"bank_code": "044"
+}
+```
+
+**Response:**
+
+```json
+{
+	"data": {
+		"account_name": "John Doe",
+		"is_internal": true,
+		"currency": "USD"
+	}
+}
+```
+
+#### 3. Get Exchange Rate
+
+```
+GET /api/exchange-rate?from=USD&to=EUR
+Headers: X-User-ID
+```
+
+Get current exchange rate between two currencies.
+
+**Response:**
+
+```json
+{
+	"data": {
+		"from_currency": "USD",
+		"to_currency": "EUR",
+		"rate": 0.85
+	}
+}
+```
+
+#### 4. Get User Wallets
+
+```
+GET /api/wallets
+Headers: X-User-ID
+```
+
+Get all wallets for the authenticated user with bank account details and cached balances.
+
+**Response:**
+
+```json
+{
+	"data": [
+		{
+			"id": "wallet_user1_usd",
+			"currency": "USD",
+			"balance": 100.5,
+			"account_number": "1000000001",
+			"bank_name": "Test Bank",
+			"bank_code": "044",
+			"account_name": "John Doe",
+			"provider": "currencycloud",
+			"created_at": "2026-01-11T00:00:00Z",
+			"updated_at": "2026-01-11T00:00:00Z"
+		}
+	]
+}
+```
+
+#### 5. Create Internal Transfer
+
+```
+POST /api/payments/internal
+Headers: X-User-ID, Idempotency-Key
+```
+
+Initiate an internal transfer between users. Uses account number and bank code to identify recipient.
+
+**Flow:**
+
+- Same user, different currency: Processes immediately (no PIN required)
+- Different user: Creates initiated transaction, requires PIN confirmation
+
+**Request:**
+
+```json
+{
+	"from_currency": "USD",
+	"to_account_number": "2000000001",
+	"to_bank_code": "044",
+	"amount": {
+		"amount": 100.5,
+		"currency": "EUR"
+	}
+}
+```
+
+**Response (Immediate):**
+
+```json
+{
+	"data": {
+		"id": "tx-id",
+		"status": "completed",
+		"amount": 100.5,
+		"currency": "EUR"
+	},
+	"message": "transfer completed successfully"
+}
+```
+
+**Response (Requires Confirmation):**
+
+```json
+{
+	"data": {
+		"id": "tx-id",
+		"status": "initiated",
+		"amount": 100.5,
+		"currency": "EUR",
+		"exchange_rate": 0.85
+	},
+	"message": "transfer initiated, please confirm with PIN"
+}
+```
+
+#### 6. Create External Transfer
+
+```
+POST /api/payments/external
+Headers: X-User-ID, Idempotency-Key
+```
+
+Initiate an external transfer to a bank account outside the system. Always requires PIN confirmation.
+
+**Request:**
+
+```json
+{
+	"from_currency": "USD",
+	"to_account_number": "9999999999",
+	"to_bank_code": "044",
+	"amount": {
+		"amount": 50.0,
+		"currency": "GBP"
+	}
+}
+```
+
+**Response:**
+
+```json
+{
+	"data": {
+		"id": "tx-id",
+		"status": "initiated",
+		"amount": 50.0,
+		"currency": "GBP",
+		"exchange_rate": 0.75
+	},
+	"message": "external transfer initiated, please confirm with PIN"
+}
+```
+
+#### 7. Confirm Transaction
+
+```
+POST /api/payments/:id/confirm
+Headers: X-User-ID
+```
+
+Confirm an initiated transaction with PIN. Transaction must be in `initiated` status and not expired (10 minutes from creation).
+
+**Request:**
+
+```json
+{
+	"pin": "12345"
+}
+```
+
+**Response (Internal - Immediate):**
+
+```json
+{
+	"data": {
+		"id": "tx-id",
+		"status": "completed",
+		"amount": 100.5,
+		"currency": "EUR"
+	},
+	"message": "transaction confirmed and completed successfully"
+}
+```
+
+**Response (External - Queued):**
+
+```json
+{
+	"data": {
+		"id": "tx-id",
+		"status": "completed",
+		"amount": 50.0,
+		"currency": "GBP",
+		"provider_reference": "{\"account_number\":\"9999999999\",\"bank_code\":\"044\"}"
+	},
+	"message": "transaction confirmed and queued for processing"
+}
+```
+
+Note: External transfers return `completed` status in the API response, but are processed asynchronously by a worker. Check transaction status later to see final provider details.
+
+#### 8. Get Transaction
+
+```
+GET /api/payments/:id
+Headers: X-User-ID
+```
+
+Get transaction details by ID.
+
+**Response:**
+
+```json
+{
+	"data": {
+		"id": "tx-id",
+		"idempotency_key": "key-123",
+		"from_wallet_id": "wallet_user1_usd",
+		"to_wallet_id": "wallet_user2_eur",
+		"type": "internal",
+		"amount": 100.5,
+		"currency": "EUR",
+		"status": "completed",
+		"exchange_rate": 0.85,
+		"created_at": "2026-01-11T00:00:00Z",
+		"updated_at": "2026-01-11T00:00:00Z"
+	}
+}
+```
+
+#### 9. Get Transaction History
+
+```
+GET /api/transactions?cursor=&limit=20
+Headers: X-User-ID
+```
+
+Get paginated transaction history using cursor-based pagination.
+
+**Query Parameters:**
+
+- `cursor` (optional): Base64-encoded cursor from previous response
+- `limit` (optional): Number of transactions per page (default: 20, max: 100)
+
+**Response:**
+
+```json
+{
+	"data": {
+		"transactions": [
+			{
+				"id": "tx-id",
+				"type": "internal",
+				"amount": 100.5,
+				"currency": "EUR",
+				"status": "completed",
+				"created_at": "2026-01-11T00:00:00Z"
+			}
+		],
+		"next_cursor": "base64-encoded-cursor"
+	}
+}
+```
+
+#### 10. Receive Webhook
+
+```
+POST /api/webhooks/:provider?reference=provider-ref
+Headers: X-User-ID
+```
+
+Receive webhook events from payment providers. Events are queued for asynchronous processing.
+
+**Path Parameters:**
+
+- `provider`: Provider name (e.g., `currencycloud`, `dlocal`)
+
+**Query Parameters:**
+
+- `reference`: Provider reference ID (optional, can be in body)
+
+**Request:**
+
+```json
+{
+	"event_type": "payout.completed",
+	"reference": "TXN-12345",
+	"transaction_id": "tx-id",
+	"payload": {}
+}
+```
+
+**Response:**
+
+```json
+{
+	"data": {
+		"status": "received"
+	},
+	"message": "webhook received successfully"
+}
+```
+
+## Money Handling
+
+All monetary amounts in API requests and responses use major units (dollars, euros, pounds) as floating-point numbers. Internally, amounts are stored as integers in the smallest currency unit (cents/pence) to avoid floating-point precision issues.
+
+**Example:**
+
+- API Request: `{"amount": 100.50, "currency": "USD"}`
+- Internal Storage: `10050` (cents)
+
+## Transaction States
+
+- **initiated**: Transaction created, awaiting PIN confirmation
+- **pending**: Transaction confirmed, being processed (external transfers)
+- **completed**: Transaction successfully processed
+- **failed**: Transaction failed (insufficient funds, provider error, etc.)
+
+## Transaction Expiration
+
+Initiated transactions expire after 10 minutes. Expired transactions cannot be confirmed and must be re-initiated.
+
+## Error Responses
+
+All errors follow a consistent format:
+
+```json
+{
+	"error": "error_code",
+	"message": "Human-readable error message"
+}
+```
+
+Common error codes:
+
+- `400`: Bad Request (validation errors, invalid parameters)
+- `401`: Unauthorized (missing or invalid X-User-ID)
+- `404`: Not Found (transaction, wallet, or account not found)
+- `409`: Conflict (duplicate idempotency key)
+- `500`: Internal Server Error
+
+## API Documentation
+
+Interactive API documentation is available at:
+
+- ReDoc UI: `http://localhost:8080/docs`
+- OpenAPI JSON: `http://localhost:8080/docs/openapi.json`
+
+## Development
+
+### Local Development
 
 ```bash
 # Install dependencies
 go mod download
 
-# Generate SQLC code (required first)
+# Generate SQLC code
 make sqlc-generate
 
-# Start services
-make dev-up
-# or
-docker compose up --build
+# Run tests
+make test
 
-# Run locally
+# Run linter
+make lint
+
+# Run locally (requires PostgreSQL and Redis)
 make run
 ```
 
-## API Endpoints
-
-All endpoints require `X-User-ID` header and `Idempotency-Key` header (for mutations).
-
-### Payments
-
-- `POST /api/payments/internal` - Internal transfer between users
-
-  - Same user (different currency): Processes immediately
-  - Different user: Creates initiated transaction, requires PIN confirmation
-  - Supports multi-currency transfers with exchange rate locking at initiate
-  - Uses account number and bank code to identify recipient (like name enquiry)
-
-  ```json
-  {
-  	"from_currency": "USD",
-  	"to_account_number": "1234567890",
-  	"to_bank_code": "044",
-  	"amount": {
-  		"amount": 10000,
-  		"currency": "EUR"
-  	}
-  }
-  ```
-
-- `POST /api/payments/external` - External transfer
-
-  - Always creates initiated transaction, requires PIN confirmation
-  - Supports multi-currency transfers with exchange rate locking at initiate
-
-  ```json
-  {
-  	"bank_account_id": "text_id",
-  	"from_currency": "USD",
-  	"amount": {
-  		"amount": 5000,
-  		"currency": "EUR"
-  	}
-  }
-  ```
-
-- `POST /api/payments/:id/confirm` - Confirm transaction with PIN
-
-  - Validates PIN and processes transaction
-  - Transaction must be in `initiated` status and not expired (10 minutes)
-
-  ```json
-  {
-  	"pin": "1234"
-  }
-  ```
-
-- `GET /api/payments/:id` - Get transaction status
-
-- `GET /api/transactions?cursor=&limit=20` - Get transaction history (cursor-based pagination)
-
-  Query parameters:
-
-  - `cursor` (optional): Base64-encoded cursor from previous response for pagination
-  - `limit` (optional): Number of transactions per page (default: 20, max: 100)
-
-  Response:
-
-  ```json
-  {
-  	"transactions": [
-  		{
-  			"id": "tx-id",
-  			"type": "internal",
-  			"amount": 10000,
-  			"currency": "USD",
-  			"status": "completed",
-  			"created_at": "2024-01-01T00:00:00Z"
-  		}
-  	],
-  	"next_cursor": "base64-encoded-cursor"
-  }
-  ```
-
-  Returns transactions in descending order (newest first). Use `next_cursor` from response to fetch next page.
-
-### Webhooks
-
-- `POST /api/webhooks/:provider` - Receive provider callbacks
-
-### Name Enquiry
-
-- `POST /api/name-enquiry` - Enquire account name and verify if internal/external
-
-  ```json
-  {
-  	"account_number": "0123456789",
-  	"bank_code": "044"
-  }
-  ```
-
-  Response:
-
-  ```json
-  {
-  	"account_name": "John Doe",
-  	"is_internal": true,
-  	"currency": "USD"
-  }
-  ```
-
-### Wallets
-
-- `GET /api/wallets` - Get all wallets for the authenticated user
-
-  Returns wallets with bank account details and cached balance (optimized, not ledger sum).
-
-  Response:
-
-  ```json
-  [
-  	{
-  		"id": "wallet-id",
-  		"currency": "USD",
-  		"balance": 50000,
-  		"account_number": "1234567890",
-  		"bank_name": "Test Bank",
-  		"account_name": "John Doe",
-  		"provider": "CurrencyCloud",
-  		"created_at": "2024-01-01T00:00:00Z",
-  		"updated_at": "2024-01-01T00:00:00Z"
-  	}
-  ]
-  ```
-
-### Exchange Rates
-
-- `GET /api/exchange-rate?from=USD&to=EUR` - Get exchange rate between currencies
-
-  Response:
-
-  ```json
-  {
-  	"from_currency": "USD",
-  	"to_currency": "EUR",
-  	"rate": 0.85
-  }
-  ```
-
-### Utilities
-
-- `GET /health` - Health check
-
-- `GET /docs` - API documentation (ReDoc)
-
-## Data Model
-
-### Core Tables
-
-- **users**: Account holders (internal/external)
-- **wallets**: One per user per currency (USD, EUR, GBP)
-- **transactions**: Transaction intent and state
-- **ledger_entries**: Immutable source of truth for all balance changes (double-entry)
-- **idempotency_keys**: Ensures at-least-once processing safety
-- **bank_accounts**: External payout destinations
-- **webhook_events**: Provider callback events
-
-### Key Principles
-
-- Balances stored in wallets table (denormalized for performance)
-- Balance calculated from ledger entries (source of truth)
-- Every transaction creates debit/credit ledger entries
-- Ledger entries are never updated or deleted
-- Transactions use idempotency keys to prevent duplicates
-
-## Money Handling
-
-- All amounts stored as integers in minor units (cents/pence)
-- No floating point arithmetic
-- Strong Money type with Currency validation
-- Supports USD, EUR, GBP
-
-## Providers
-
-- **CurrencyCloud**: Supports USD, EUR
-- **dLocal**: Supports USD, EUR, GBP
-
-Provider selection based on currency support. External payouts processed asynchronously via Redis queue.
-
-## Development
-
-```bash
-make run              # Run locally
-make test             # Run tests
-make lint             # Lint code
-make sqlc-generate    # Generate SQLC code
-make dev-up           # Start docker compose
-make dev-down         # Stop docker compose
-```
-
-## Environment Variables
+### Environment Variables
 
 | Variable            | Default                  | Description          |
 | ------------------- | ------------------------ | -------------------- |
@@ -247,12 +504,30 @@ make dev-down         # Stop docker compose
 | `DATABASE_PASSWORD` | `password`               | Database password    |
 | `REDIS_URL`         | `redis://localhost:6379` | Redis connection URL |
 
+### Database Migrations
+
+Migrations run automatically on startup. To manually run:
+
+```bash
+# Using golang-migrate
+migrate -path migrations -database "postgres://postgres:password@localhost:5432/payment_service?sslmode=disable" up
+```
+
+### Seed Data
+
+Seed data is applied automatically on startup. The seed script is idempotent and can be run multiple times safely.
+
 ## Testing
 
 ```bash
 # Run all tests
 make test
 
-# Run with coverage
-make test-verbose
+# Run tests with coverage
+go test -v -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
 ```
+
+## Architecture
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed design decisions, trade-offs, and improvements.

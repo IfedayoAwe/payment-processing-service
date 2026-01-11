@@ -20,6 +20,7 @@ type PaymentHandler interface {
 	GetTransactionHistory(c echo.Context) error
 	GetExchangeRate(c echo.Context) error
 	GetUserWallets(c echo.Context) error
+	GetTestUsers(c echo.Context) error
 }
 
 type paymentHandler struct {
@@ -64,11 +65,12 @@ func (ph *paymentHandler) CreateInternalTransfer(c echo.Context) error {
 		return utils.HandleError(c, err)
 	}
 
+	response := models.TransactionToResponse(transaction)
 	if transaction.Status == models.TransactionStatusCompleted {
-		return utils.Created(c, transaction, "transfer completed successfully")
+		return utils.Created(c, response, "transfer completed successfully")
 	}
 
-	return utils.Created(c, transaction, "transfer initiated, please confirm with PIN")
+	return utils.Created(c, response, "transfer initiated, please confirm with PIN")
 }
 
 func (ph *paymentHandler) ConfirmTransaction(c echo.Context) error {
@@ -97,11 +99,12 @@ func (ph *paymentHandler) ConfirmTransaction(c echo.Context) error {
 		return utils.HandleError(c, err)
 	}
 
+	response := models.TransactionToResponse(transaction)
 	if transaction.Status == models.TransactionStatusCompleted {
-		return utils.Success(c, transaction, "transaction confirmed and completed successfully")
+		return utils.Success(c, response, "transaction confirmed and completed successfully")
 	}
 
-	return utils.Success(c, transaction, "transaction confirmed and queued for processing")
+	return utils.Success(c, response, "transaction confirmed and queued for processing")
 }
 
 func (ph *paymentHandler) GetTransaction(c echo.Context) error {
@@ -115,7 +118,8 @@ func (ph *paymentHandler) GetTransaction(c echo.Context) error {
 		return utils.HandleError(c, err)
 	}
 
-	return utils.Success(c, transaction, "transaction retrieved successfully")
+	response := models.TransactionToResponse(transaction)
+	return utils.Success(c, response, "transaction retrieved successfully")
 }
 
 func (ph *paymentHandler) CreateExternalTransfer(c echo.Context) error {
@@ -145,12 +149,13 @@ func (ph *paymentHandler) CreateExternalTransfer(c echo.Context) error {
 		return utils.BadRequest(c, "Idempotency-Key header is required")
 	}
 
-	transaction, err := ph.services.Payment().CreateExternalTransfer(c.Request().Context(), userID, req.BankAccountID, fromCurrency, toAmount, idempotencyKey)
+	transaction, err := ph.services.Payment().CreateExternalTransfer(c.Request().Context(), userID, req.ToAccountNumber, req.ToBankCode, fromCurrency, toAmount, idempotencyKey)
 	if err != nil {
 		return utils.HandleError(c, err)
 	}
 
-	return utils.Created(c, transaction, "external transfer initiated, please confirm with PIN")
+	response := models.TransactionToResponse(transaction)
+	return utils.Created(c, response, "external transfer initiated, please confirm with PIN")
 }
 
 func (ph *paymentHandler) GetExchangeRate(c echo.Context) error {
@@ -195,7 +200,58 @@ func (ph *paymentHandler) GetUserWallets(c echo.Context) error {
 		return utils.HandleError(c, err)
 	}
 
-	return utils.Success(c, wallets, "wallets retrieved successfully")
+	response := make([]*models.WalletWithBankAccountResponse, len(wallets))
+	for i, wallet := range wallets {
+		response[i] = models.WalletWithBankAccountToResponse(wallet)
+	}
+
+	return utils.Success(c, response, "wallets retrieved successfully")
+}
+
+func (ph *paymentHandler) GetTestUsers(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	testUserIDs := []string{"user_1", "user_2"}
+	testPIN := "12345"
+
+	var usersResponse []*models.TestUserDataResponse
+
+	for _, userID := range testUserIDs {
+		user, err := ph.services.Queries().GetUserByID(ctx, userID)
+		if err != nil {
+			return utils.HandleError(c, err)
+		}
+
+		wallets, err := ph.services.Wallet().GetUserWallets(ctx, userID)
+		if err != nil {
+			return utils.HandleError(c, err)
+		}
+
+		var name *string
+		if user.Name.Valid {
+			name = &user.Name.String
+		}
+
+		walletsResponse := make([]*models.WalletWithBankAccountResponse, len(wallets))
+		for i, wallet := range wallets {
+			walletsResponse[i] = models.WalletWithBankAccountToResponse(wallet)
+		}
+
+		testUser := &models.TestUserDataResponse{
+			UserID:  user.UserID,
+			Name:    name,
+			PIN:     testPIN,
+			Wallets: walletsResponse,
+		}
+
+		usersResponse = append(usersResponse, testUser)
+	}
+
+	response := &models.TestUsersResponseDTO{
+		Users: usersResponse,
+	}
+
+	return utils.Success(c, response, "test users retrieved successfully")
 }
 
 func (ph *paymentHandler) GetTransactionHistory(c echo.Context) error {
@@ -218,5 +274,15 @@ func (ph *paymentHandler) GetTransactionHistory(c echo.Context) error {
 		return utils.HandleError(c, err)
 	}
 
-	return utils.Success(c, history, "transaction history retrieved successfully")
+	transactionsResponse := make([]*models.TransactionResponse, len(history.Transactions))
+	for i, tx := range history.Transactions {
+		transactionsResponse[i] = models.TransactionToResponse(tx)
+	}
+
+	response := &models.TransactionHistoryResponseDTO{
+		Transactions: transactionsResponse,
+		NextCursor:   history.NextCursor,
+	}
+
+	return utils.Success(c, response, "transaction history retrieved successfully")
 }

@@ -10,7 +10,7 @@ import (
 )
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT user_id, name, type, pin_hash, created_at, updated_at
+SELECT user_id, name, pin_hash, created_at, updated_at
 FROM users
 WHERE user_id = $1
 `
@@ -21,7 +21,6 @@ func (q *Queries) GetUserByID(ctx context.Context, userID string) (User, error) 
 	err := row.Scan(
 		&i.UserID,
 		&i.Name,
-		&i.Type,
 		&i.PinHash,
 		&i.CreatedAt,
 		&i.UpdatedAt,

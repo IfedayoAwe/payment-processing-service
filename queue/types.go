@@ -34,7 +34,8 @@ type PayoutJobPayload struct {
 	TransactionID string `json:"transaction_id"`
 	Amount        int64  `json:"amount"`
 	Currency      string `json:"currency"`
-	BankAccountID string `json:"bank_account_id"`
+	AccountNumber string `json:"account_number"`
+	BankCode      string `json:"bank_code"`
 }
 
 type WebhookJobPayload struct {

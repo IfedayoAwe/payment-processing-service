@@ -21,7 +21,7 @@ type WalletService interface {
 }
 
 type walletService struct {
-	queries *gen.Queries
+	queries gen.Querier
 	db      *sql.DB
 }
 
@@ -112,13 +112,16 @@ func (ws *walletService) GetUserWallets(ctx context.Context, userID string) ([]*
 
 	wallets := make([]*models.WalletWithBankAccount, 0, len(rows))
 	for _, row := range rows {
-		var accountNumber, bankName, accountName, provider *string
+		var accountNumber, bankName, bankCode, accountName, provider *string
 
 		if row.AccountNumber.Valid {
 			accountNumber = &row.AccountNumber.String
 		}
 		if row.BankName.Valid {
 			bankName = &row.BankName.String
+		}
+		if row.BankCode.Valid {
+			bankCode = &row.BankCode.String
 		}
 		if row.AccountName.Valid {
 			accountName = &row.AccountName.String
@@ -133,6 +136,7 @@ func (ws *walletService) GetUserWallets(ctx context.Context, userID string) ([]*
 			Balance:       row.Balance,
 			AccountNumber: accountNumber,
 			BankName:      bankName,
+			BankCode:      bankCode,
 			AccountName:   accountName,
 			Provider:      provider,
 			CreatedAt:     row.CreatedAt,
@@ -144,7 +148,12 @@ func (ws *walletService) GetUserWallets(ctx context.Context, userID string) ([]*
 }
 
 func (ws *walletService) LockWalletForUpdate(ctx context.Context, tx *sql.Tx, walletID string) (*models.Wallet, error) {
-	queries := ws.queries.WithTx(tx)
+	var queries gen.Querier
+	if q, ok := ws.queries.(*gen.Queries); ok {
+		queries = q.WithTx(tx)
+	} else {
+		queries = ws.queries
+	}
 	wallet, err := queries.GetWalletByIDForUpdate(ctx, walletID)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -170,7 +179,12 @@ func (ws *walletService) LockWalletForUpdate(ctx context.Context, tx *sql.Tx, wa
 }
 
 func (ws *walletService) LockWalletByUserAndCurrency(ctx context.Context, tx *sql.Tx, userID string, currency money.Currency) (*models.Wallet, error) {
-	queries := ws.queries.WithTx(tx)
+	var queries gen.Querier
+	if q, ok := ws.queries.(*gen.Queries); ok {
+		queries = q.WithTx(tx)
+	} else {
+		queries = ws.queries
+	}
 	wallet, err := queries.GetWalletByUserAndCurrencyForUpdate(ctx, gen.GetWalletByUserAndCurrencyForUpdateParams{
 		UserID:   userID,
 		Currency: currency.String(),

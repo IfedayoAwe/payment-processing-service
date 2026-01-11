@@ -40,6 +40,14 @@ func (pw *payoutWorker) ProcessPayoutJob(ctx context.Context, job *queue.Job) er
 		return fmt.Errorf("unmarshal payout job payload: %w", err)
 	}
 
+	utils.Logger.Info().
+		Str("transaction_id", payload.TransactionID).
+		Str("account_number", payload.AccountNumber).
+		Str("bank_code", payload.BankCode).
+		Int64("amount", payload.Amount).
+		Str("currency", payload.Currency).
+		Msg("processing payout job")
+
 	transaction, err := pw.queries.GetTransactionByID(ctx, payload.TransactionID)
 	if err != nil {
 		return fmt.Errorf("get transaction: %w", err)
@@ -54,23 +62,31 @@ func (pw *payoutWorker) ProcessPayoutJob(ctx context.Context, job *queue.Job) er
 		return fmt.Errorf("invalid currency: %w", err)
 	}
 
-	bankAccount, err := pw.getBankAccount(ctx, payload.BankAccountID)
+	providerRef := pw.generateProviderReference(payload.TransactionID)
+
+	err = pw.queries.UpdateTransactionWithProvider(ctx, gen.UpdateTransactionWithProviderParams{
+		ProviderName:      sql.NullString{Valid: false},
+		ProviderReference: sql.NullString{String: string(providerRef), Valid: true},
+		Status:            transaction.Status,
+		ID:                payload.TransactionID,
+	})
 	if err != nil {
-		return fmt.Errorf("get bank account: %w", err)
+		return fmt.Errorf("save provider reference: %w", err)
 	}
 
 	payoutReq := providers.PayoutRequest{
 		Amount: money.NewMoney(payload.Amount, currency),
 		Destination: providers.BankAccount{
-			BankName:      bankAccount.BankName,
-			AccountNumber: bankAccount.AccountNumber,
-			AccountName:   getStringOrEmpty(bankAccount.AccountName),
+			BankName:      "",
+			BankCode:      payload.BankCode,
+			AccountNumber: payload.AccountNumber,
+			AccountName:   "",
 			Currency:      currency,
 		},
 		Metadata: map[string]string{
-			"transaction_id":  payload.TransactionID,
-			"bank_account_id": payload.BankAccountID,
+			"transaction_id": payload.TransactionID,
 		},
+		ProviderRef: &providerRef,
 	}
 
 	payoutResp, err := pw.provider.SendPayout(ctx, payoutReq)
@@ -82,9 +98,13 @@ func (pw *payoutWorker) ProcessPayoutJob(ctx context.Context, job *queue.Job) er
 		return err
 	}
 
+	if payoutResp.ProviderRef != "" {
+		providerRef = payoutResp.ProviderRef
+	}
+
 	err = pw.queries.UpdateTransactionWithProvider(ctx, gen.UpdateTransactionWithProviderParams{
 		ProviderName:      sql.NullString{String: payoutResp.ProviderName, Valid: true},
-		ProviderReference: sql.NullString{String: string(payoutResp.ProviderRef), Valid: true},
+		ProviderReference: sql.NullString{String: string(providerRef), Valid: true},
 		Status:            string(models.TransactionStatusCompleted),
 		ID:                payload.TransactionID,
 	})
@@ -94,7 +114,7 @@ func (pw *payoutWorker) ProcessPayoutJob(ctx context.Context, job *queue.Job) er
 
 	webhookPayload, err := json.Marshal(map[string]interface{}{
 		"transaction_id":     payload.TransactionID,
-		"provider_reference": string(payoutResp.ProviderRef),
+		"provider_reference": string(providerRef),
 		"status":             "completed",
 		"amount":             payload.Amount,
 		"currency":           payload.Currency,
@@ -106,7 +126,7 @@ func (pw *payoutWorker) ProcessPayoutJob(ctx context.Context, job *queue.Job) er
 	webhookJobPayload := queue.WebhookJobPayload{
 		ProviderName:      payoutResp.ProviderName,
 		EventType:         "payout.completed",
-		ProviderReference: string(payoutResp.ProviderRef),
+		ProviderReference: string(providerRef),
 		TransactionID:     &payload.TransactionID,
 		Payload:           webhookPayload,
 	}
@@ -119,12 +139,14 @@ func (pw *payoutWorker) ProcessPayoutJob(ctx context.Context, job *queue.Job) er
 }
 
 func (pw *payoutWorker) StartWorker(ctx context.Context) error {
+	utils.Logger.Info().Msg("payout worker started")
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
+			utils.Logger.Info().Msg("payout worker stopping")
 			return ctx.Err()
 		case <-ticker.C:
 			if err := pw.queue.Process(ctx, queue.JobTypePayout, pw.ProcessPayoutJob, 5*time.Second); err != nil {
@@ -143,37 +165,10 @@ func (pw *payoutWorker) failTransaction(ctx context.Context, transactionID strin
 	return err
 }
 
-func (pw *payoutWorker) getBankAccount(ctx context.Context, bankAccountID string) (*models.BankAccount, error) {
-	bankAccount, err := pw.queries.GetBankAccountByID(ctx, bankAccountID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, utils.NotFoundErr("bank account not found")
-		}
-		return nil, utils.ServerErr(fmt.Errorf("get bank account: %w", err))
+func (pw *payoutWorker) generateProviderReference(transactionID string) providers.ProviderReference {
+	prefix := transactionID
+	if len(transactionID) > 8 {
+		prefix = transactionID[:8]
 	}
-
-	var accountName *string
-	if bankAccount.AccountName.Valid {
-		accountName = &bankAccount.AccountName.String
-	}
-
-	return &models.BankAccount{
-		ID:            bankAccount.ID,
-		UserID:        bankAccount.UserID,
-		BankName:      bankAccount.BankName,
-		BankCode:      bankAccount.BankCode,
-		AccountNumber: bankAccount.AccountNumber,
-		AccountName:   accountName,
-		Currency:      bankAccount.Currency,
-		Provider:      bankAccount.Provider,
-		CreatedAt:     bankAccount.CreatedAt,
-		UpdatedAt:     bankAccount.UpdatedAt,
-	}, nil
-}
-
-func getStringOrEmpty(ptr *string) string {
-	if ptr == nil {
-		return ""
-	}
-	return *ptr
+	return providers.ProviderReference(fmt.Sprintf("TXN-%s-%d", prefix, time.Now().UnixNano()))
 }

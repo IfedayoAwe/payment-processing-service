@@ -61,6 +61,11 @@ func InitDBWithDeps(cfg config.Config, deps Dependencies) (*gen.Queries, *sql.DB
 
 	applyMigrations(migrator)
 
+	seedPath := findSeedsPath(deps)
+	if seedPath != "" {
+		applySeeds(dbConn, seedPath, deps)
+	}
+
 	utils.Logger.Info().Msg("Migrations applied successfully. SQLC client initialized.")
 	return gen.New(dbConn), dbConn
 }
@@ -106,6 +111,43 @@ func findMigrationsPath(deps Dependencies) string {
 		repoRoot = filepath.Dir(repoRoot)
 	}
 	return filepath.Join(repoRoot, "migrations")
+}
+
+func findSeedsPath(deps Dependencies) string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+
+	candidate := filepath.Join(wd, "seeds", "000001_seed_data.sql")
+	if deps.FileExists(candidate) {
+		return candidate
+	}
+
+	repoRoot := wd
+	for !deps.FileExists(filepath.Join(repoRoot, "go.mod")) && repoRoot != "/" {
+		repoRoot = filepath.Dir(repoRoot)
+	}
+	seedPath := filepath.Join(repoRoot, "seeds", "000001_seed_data.sql")
+	if deps.FileExists(seedPath) {
+		return seedPath
+	}
+	return ""
+}
+
+func applySeeds(db *sql.DB, seedPath string, deps Dependencies) {
+	seedSQL, err := os.ReadFile(seedPath)
+	if err != nil {
+		utils.Logger.Warn().Err(err).Str("path", seedPath).Msg("Could not read seed file, skipping")
+		return
+	}
+
+	if _, err := db.Exec(string(seedSQL)); err != nil {
+		utils.Logger.Warn().Err(err).Str("path", seedPath).Msg("Could not apply seed data, skipping")
+		return
+	}
+
+	utils.Logger.Info().Str("path", seedPath).Msg("Seed data applied successfully")
 }
 
 func setupMigrationDriverWithRetry(db *sql.DB, deps Dependencies) database.Driver {

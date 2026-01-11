@@ -8,19 +8,33 @@ import (
 )
 
 type Processor struct {
-	providers []PayoutProvider
+	payoutProviders       []PayoutProvider
+	nameEnquiryProviders  []NameEnquiryProvider
+	exchangeRateProviders []ExchangeRateProvider
 }
 
 func NewProcessor() *Processor {
-	return &Processor{providers: []PayoutProvider{}}
+	return &Processor{
+		payoutProviders:       []PayoutProvider{},
+		nameEnquiryProviders:  []NameEnquiryProvider{},
+		exchangeRateProviders: []ExchangeRateProvider{},
+	}
 }
 
 func (p *Processor) RegisterPayoutProvider(provider PayoutProvider) {
-	p.providers = append(p.providers, provider)
+	p.payoutProviders = append(p.payoutProviders, provider)
+}
+
+func (p *Processor) RegisterNameEnquiryProvider(provider NameEnquiryProvider) {
+	p.nameEnquiryProviders = append(p.nameEnquiryProviders, provider)
+}
+
+func (p *Processor) RegisterExchangeRateProvider(provider ExchangeRateProvider) {
+	p.exchangeRateProviders = append(p.exchangeRateProviders, provider)
 }
 
 func (p *Processor) SelectProvider(currency money.Currency) (PayoutProvider, error) {
-	for _, provider := range p.providers {
+	for _, provider := range p.payoutProviders {
 		if provider.SupportsCurrency(currency) {
 			return provider, nil
 		}
@@ -44,17 +58,17 @@ func (p *Processor) SendPayout(ctx context.Context, req PayoutRequest) (*PayoutR
 }
 
 func (p *Processor) NameEnquiry(ctx context.Context, req NameEnquiryRequest) (*NameEnquiryResponse, error) {
-	if len(p.providers) == 0 {
-		return nil, fmt.Errorf("no providers available")
+	if len(p.nameEnquiryProviders) == 0 {
+		return nil, fmt.Errorf("no name enquiry providers available")
 	}
 
-	return p.providers[0].NameEnquiry(ctx, req)
+	return p.nameEnquiryProviders[0].NameEnquiry(ctx, req)
 }
 
 func (p *Processor) GetExchangeRate(ctx context.Context, req ExchangeRateRequest) (*ExchangeRateResponse, error) {
-	if len(p.providers) == 0 {
-		return nil, fmt.Errorf("no providers available")
+	if len(p.exchangeRateProviders) == 0 {
+		return nil, fmt.Errorf("no exchange rate providers available")
 	}
 
-	return p.providers[0].GetExchangeRate(ctx, req)
+	return p.exchangeRateProviders[0].GetExchangeRate(ctx, req)
 }

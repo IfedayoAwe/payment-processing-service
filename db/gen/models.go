@@ -58,7 +58,6 @@ type Transaction struct {
 type User struct {
 	UserID    string         `db:"user_id" json:"user_id"`
 	Name      sql.NullString `db:"name" json:"name"`
-	Type      string         `db:"type" json:"type"`
 	PinHash   sql.NullString `db:"pin_hash" json:"pin_hash"`
 	CreatedAt time.Time      `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time      `db:"updated_at" json:"updated_at"`

@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/IfedayoAwe/payment-processing-service/pkg/money"
+)
 
 type TransactionType string
 
@@ -18,17 +22,9 @@ const (
 	TransactionStatusFailed    TransactionStatus = "failed"
 )
 
-type UserType string
-
-const (
-	UserTypeInternal UserType = "internal"
-	UserTypeExternal UserType = "external"
-)
-
 type User struct {
 	ID        string
 	Name      *string
-	Type      UserType
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -112,6 +108,7 @@ type WalletWithBankAccount struct {
 	Balance       int64     `json:"balance"`
 	AccountNumber *string   `json:"account_number,omitempty"`
 	BankName      *string   `json:"bank_name,omitempty"`
+	BankCode      *string   `json:"bank_code,omitempty"`
 	AccountName   *string   `json:"account_name,omitempty"`
 	Provider      *string   `json:"provider,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -121,4 +118,98 @@ type WalletWithBankAccount struct {
 type TransactionHistoryResponse struct {
 	Transactions []*Transaction `json:"transactions"`
 	NextCursor   *string        `json:"next_cursor,omitempty"`
+}
+
+type TestUserData struct {
+	UserID  string                   `json:"user_id"`
+	Name    *string                  `json:"name"`
+	PIN     string                   `json:"pin"`
+	Wallets []*WalletWithBankAccount `json:"wallets"`
+}
+
+type TestUsersResponse struct {
+	Users []*TestUserData `json:"users"`
+}
+
+// Response DTOs with amounts in major units (dollars/euros/pounds)
+type TransactionResponse struct {
+	ID                string    `json:"id"`
+	IdempotencyKey    string    `json:"idempotency_key"`
+	FromWalletID      *string   `json:"from_wallet_id,omitempty"`
+	ToWalletID        *string   `json:"to_wallet_id,omitempty"`
+	Type              string    `json:"type"`
+	Amount            float64   `json:"amount"`
+	Currency          string    `json:"currency"`
+	Status            string    `json:"status"`
+	ProviderName      *string   `json:"provider_name,omitempty"`
+	ProviderReference *string   `json:"provider_reference,omitempty"`
+	ExchangeRate      *float64  `json:"exchange_rate,omitempty"`
+	FailureReason     *string   `json:"failure_reason,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+func TransactionToResponse(tx *Transaction) *TransactionResponse {
+	amount := money.ToMajorUnits(tx.Amount)
+	return &TransactionResponse{
+		ID:                tx.ID,
+		IdempotencyKey:    tx.IdempotencyKey,
+		FromWalletID:      tx.FromWalletID,
+		ToWalletID:        tx.ToWalletID,
+		Type:              string(tx.Type),
+		Amount:            amount,
+		Currency:          tx.Currency,
+		Status:            string(tx.Status),
+		ProviderName:      tx.ProviderName,
+		ProviderReference: tx.ProviderReference,
+		ExchangeRate:      tx.ExchangeRate,
+		FailureReason:     tx.FailureReason,
+		CreatedAt:         tx.CreatedAt,
+		UpdatedAt:         tx.UpdatedAt,
+	}
+}
+
+type WalletWithBankAccountResponse struct {
+	ID            string    `json:"id"`
+	Currency      string    `json:"currency"`
+	Balance       float64   `json:"balance"`
+	AccountNumber *string   `json:"account_number,omitempty"`
+	BankName      *string   `json:"bank_name,omitempty"`
+	BankCode      *string   `json:"bank_code,omitempty"`
+	AccountName   *string   `json:"account_name,omitempty"`
+	Provider      *string   `json:"provider,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+func WalletWithBankAccountToResponse(w *WalletWithBankAccount) *WalletWithBankAccountResponse {
+	balance := money.ToMajorUnits(w.Balance)
+	return &WalletWithBankAccountResponse{
+		ID:            w.ID,
+		Currency:      w.Currency,
+		Balance:       balance,
+		AccountNumber: w.AccountNumber,
+		BankName:      w.BankName,
+		BankCode:      w.BankCode,
+		AccountName:   w.AccountName,
+		Provider:      w.Provider,
+		CreatedAt:     w.CreatedAt,
+		UpdatedAt:     w.UpdatedAt,
+	}
+}
+
+type TransactionHistoryResponseDTO struct {
+	Transactions []*TransactionResponse `json:"transactions"`
+	NextCursor   *string                `json:"next_cursor,omitempty"`
+}
+
+type TestUserDataResponse struct {
+	UserID  string                           `json:"user_id"`
+	Name    *string                          `json:"name"`
+	PIN     string                           `json:"pin"`
+	Wallets []*WalletWithBankAccountResponse `json:"wallets"`
+}
+
+type TestUsersResponseDTO struct {
+	Users []*TestUserDataResponse `json:"users"`
 }

@@ -34,8 +34,9 @@ RUN addgroup -g 1000 appuser && \
 # Copy the binary from builder
 COPY --from=builder /app/payment-service /usr/local/bin/payment-service
 
-# Copy migrations directory
+# Copy migrations and seeds directories
 COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/seeds ./seeds
 
 # Change ownership to non-root user
 RUN chown -R appuser:appuser /app /usr/local/bin/payment-service

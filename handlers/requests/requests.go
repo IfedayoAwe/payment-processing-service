@@ -29,9 +29,10 @@ type CreateInternalTransferRequest struct {
 }
 
 type CreateExternalTransferRequest struct {
-	BankAccountID string        `json:"bank_account_id" validate:"required"`
-	FromCurrency  string        `json:"from_currency" validate:"required,oneof=USD EUR GBP"`
-	Amount        AmountRequest `json:"amount" validate:"required"`
+	ToAccountNumber string        `json:"to_account_number" validate:"required"`
+	ToBankCode      string        `json:"to_bank_code" validate:"required"`
+	FromCurrency    string        `json:"from_currency" validate:"required,oneof=USD EUR GBP"`
+	Amount          AmountRequest `json:"amount" validate:"required"`
 }
 
 type NameEnquiryRequest struct {
@@ -45,7 +46,7 @@ type ConfirmTransactionRequest struct {
 
 func (c *ConfirmTransactionRequest) Validate() error {
 	if !utils.IsValidPIN(c.PIN) {
-		return fmt.Errorf("PIN must be exactly 4 numeric digits")
+		return fmt.Errorf("PIN must be exactly 5 numeric digits")
 	}
 	return nil
 }

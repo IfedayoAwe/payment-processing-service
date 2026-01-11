@@ -17,7 +17,7 @@ type LedgerService interface {
 }
 
 type ledgerService struct {
-	queries *gen.Queries
+	queries gen.Querier
 }
 
 func (s *Services) Ledger() LedgerService {
@@ -31,7 +31,12 @@ func (ls *ledgerService) CreateDebitEntry(ctx context.Context, tx *sql.Tx, walle
 		return utils.BadRequestErr("debit amount must be negative")
 	}
 
-	queries := ls.queries.WithTx(tx)
+	var queries gen.Querier
+	if q, ok := ls.queries.(*gen.Queries); ok {
+		queries = q.WithTx(tx)
+	} else {
+		queries = ls.queries
+	}
 	_, err := queries.CreateLedgerEntry(ctx, gen.CreateLedgerEntryParams{
 		WalletID:      walletID,
 		TransactionID: transactionID,
@@ -50,7 +55,12 @@ func (ls *ledgerService) CreateCreditEntry(ctx context.Context, tx *sql.Tx, wall
 		return utils.BadRequestErr("credit amount must be positive")
 	}
 
-	queries := ls.queries.WithTx(tx)
+	var queries gen.Querier
+	if q, ok := ls.queries.(*gen.Queries); ok {
+		queries = q.WithTx(tx)
+	} else {
+		queries = ls.queries
+	}
 	_, err := queries.CreateLedgerEntry(ctx, gen.CreateLedgerEntryParams{
 		WalletID:      walletID,
 		TransactionID: transactionID,
@@ -65,9 +75,13 @@ func (ls *ledgerService) CreateCreditEntry(ctx context.Context, tx *sql.Tx, wall
 }
 
 func (ls *ledgerService) GetWalletBalance(ctx context.Context, tx *sql.Tx, walletID string, currency money.Currency) (int64, error) {
-	var queries *gen.Queries
+	var queries gen.Querier
 	if tx != nil {
-		queries = ls.queries.WithTx(tx)
+		if q, ok := ls.queries.(*gen.Queries); ok {
+			queries = q.WithTx(tx)
+		} else {
+			queries = ls.queries
+		}
 	} else {
 		queries = ls.queries
 	}

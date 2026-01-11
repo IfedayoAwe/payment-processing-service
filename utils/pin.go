@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	PinMinLength = 4
-	PinMaxLength = 4
+	PinMinLength = 5
+	PinMaxLength = 5
 )
 
-var pinRegex = regexp.MustCompile(`^\d{4}$`)
+var pinRegex = regexp.MustCompile(`^\d{5}$`)
 
 func HashPIN(pin string) (string, error) {
 	if !IsValidPIN(pin) {
