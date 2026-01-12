@@ -63,7 +63,7 @@ Multi-currency payment processing system handling internal transfers between use
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone git@github.com:IfedayoAwe/payment-processing-service.git
 cd payment-processing-service
 
 # Start all services (PostgreSQL, Redis, API)
