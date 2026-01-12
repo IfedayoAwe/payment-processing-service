@@ -3,6 +3,7 @@ package handlers
 import (
 	"strconv"
 
+	"github.com/IfedayoAwe/payment-processing-service/db/gen"
 	"github.com/IfedayoAwe/payment-processing-service/handlers/requests"
 	"github.com/IfedayoAwe/payment-processing-service/middleware"
 	"github.com/IfedayoAwe/payment-processing-service/models"
@@ -24,12 +25,16 @@ type PaymentHandler interface {
 }
 
 type paymentHandler struct {
-	services *service.Services
+	paymentService service.PaymentService
+	walletService  service.WalletService
+	queries        *gen.Queries
 }
 
-func (h *Handlers) Payment() PaymentHandler {
+func newPaymentHandler(paymentService service.PaymentService, walletService service.WalletService, queries *gen.Queries) PaymentHandler {
 	return &paymentHandler{
-		services: h.services,
+		paymentService: paymentService,
+		walletService:  walletService,
+		queries:        queries,
 	}
 }
 
@@ -60,7 +65,7 @@ func (ph *paymentHandler) CreateInternalTransfer(c echo.Context) error {
 		return utils.BadRequest(c, "Idempotency-Key header is required")
 	}
 
-	transaction, err := ph.services.Payment().CreateInternalTransfer(c.Request().Context(), fromUserID, req.ToAccountNumber, req.ToBankCode, fromCurrency, toAmount, idempotencyKey)
+	transaction, err := ph.paymentService.CreateInternalTransfer(c.Request().Context(), fromUserID, req.ToAccountNumber, req.ToBankCode, fromCurrency, toAmount, idempotencyKey)
 	if err != nil {
 		return utils.HandleError(c, err)
 	}
@@ -94,7 +99,7 @@ func (ph *paymentHandler) ConfirmTransaction(c echo.Context) error {
 
 	userID := middleware.GetUserID(c)
 
-	transaction, err := ph.services.Payment().ConfirmTransaction(c.Request().Context(), transactionID, userID, req.PIN)
+	transaction, err := ph.paymentService.ConfirmTransaction(c.Request().Context(), transactionID, userID, req.PIN)
 	if err != nil {
 		return utils.HandleError(c, err)
 	}
@@ -113,7 +118,7 @@ func (ph *paymentHandler) GetTransaction(c echo.Context) error {
 		return utils.BadRequest(c, "transaction ID is required")
 	}
 
-	transaction, err := ph.services.Payment().GetTransactionByID(c.Request().Context(), transactionID)
+	transaction, err := ph.paymentService.GetTransactionByID(c.Request().Context(), transactionID)
 	if err != nil {
 		return utils.HandleError(c, err)
 	}
@@ -149,7 +154,7 @@ func (ph *paymentHandler) CreateExternalTransfer(c echo.Context) error {
 		return utils.BadRequest(c, "Idempotency-Key header is required")
 	}
 
-	transaction, err := ph.services.Payment().CreateExternalTransfer(c.Request().Context(), userID, req.ToAccountNumber, req.ToBankCode, fromCurrency, toAmount, idempotencyKey)
+	transaction, err := ph.paymentService.CreateExternalTransfer(c.Request().Context(), userID, req.ToAccountNumber, req.ToBankCode, fromCurrency, toAmount, idempotencyKey)
 	if err != nil {
 		return utils.HandleError(c, err)
 	}
@@ -180,7 +185,7 @@ func (ph *paymentHandler) GetExchangeRate(c echo.Context) error {
 		return utils.BadRequest(c, "invalid to currency")
 	}
 
-	rate, err := ph.services.Payment().GetExchangeRate(c.Request().Context(), fromCurrency, toCurrency)
+	rate, err := ph.paymentService.GetExchangeRate(c.Request().Context(), fromCurrency, toCurrency)
 	if err != nil {
 		return utils.HandleError(c, err)
 	}
@@ -195,7 +200,7 @@ func (ph *paymentHandler) GetExchangeRate(c echo.Context) error {
 func (ph *paymentHandler) GetUserWallets(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 
-	wallets, err := ph.services.Wallet().GetUserWallets(c.Request().Context(), userID)
+	wallets, err := ph.walletService.GetUserWallets(c.Request().Context(), userID)
 	if err != nil {
 		return utils.HandleError(c, err)
 	}
@@ -217,12 +222,12 @@ func (ph *paymentHandler) GetTestUsers(c echo.Context) error {
 	var usersResponse []*models.TestUserDataResponse
 
 	for _, userID := range testUserIDs {
-		user, err := ph.services.Queries().GetUserByID(ctx, userID)
+		user, err := ph.queries.GetUserByID(ctx, userID)
 		if err != nil {
 			return utils.HandleError(c, err)
 		}
 
-		wallets, err := ph.services.Wallet().GetUserWallets(ctx, userID)
+		wallets, err := ph.walletService.GetUserWallets(ctx, userID)
 		if err != nil {
 			return utils.HandleError(c, err)
 		}
@@ -269,7 +274,7 @@ func (ph *paymentHandler) GetTransactionHistory(c echo.Context) error {
 		limit = int32(parsed)
 	}
 
-	history, err := ph.services.Payment().GetTransactionHistory(c.Request().Context(), userID, cursor, limit)
+	history, err := ph.paymentService.GetTransactionHistory(c.Request().Context(), userID, cursor, limit)
 	if err != nil {
 		return utils.HandleError(c, err)
 	}

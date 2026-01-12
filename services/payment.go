@@ -31,18 +31,18 @@ type paymentService struct {
 	db               *sql.DB
 	wallet           WalletService
 	ledger           LedgerService
-	externalTransfer *externalTransferService
+	externalTransfer ExternalTransferService
 	provider         *providers.Processor
 }
 
-func (s *Services) Payment() PaymentService {
+func newPaymentService(queries gen.Querier, db *sql.DB, wallet WalletService, ledger LedgerService, externalTransfer ExternalTransferService, provider *providers.Processor) PaymentService {
 	return &paymentService{
-		queries:          s.queries,
-		db:               s.db,
-		wallet:           s.Wallet(),
-		ledger:           s.Ledger(),
-		externalTransfer: s.ExternalTransfer().(*externalTransferService),
-		provider:         s.provider,
+		queries:          queries,
+		db:               db,
+		wallet:           wallet,
+		ledger:           ledger,
+		externalTransfer: externalTransfer,
+		provider:         provider,
 	}
 }
 
@@ -114,7 +114,7 @@ func (ps *paymentService) CreateInternalTransfer(ctx context.Context, fromUserID
 		return ps.processInternalTransferImmediate(ctx, fromWallet, toWallet, fromCurrency, toAmount, exchangeRate, idempotencyKey)
 	}
 
-	return ps.createInitiatedInternalTransfer(ctx, fromWallet, toWallet, fromCurrency, toAmount, exchangeRate, idempotencyKey)
+	return ps.createInitiatedInternalTransfer(ctx, fromWallet, toWallet, toAmount, exchangeRate, idempotencyKey)
 }
 
 func (ps *paymentService) processInternalTransferImmediate(ctx context.Context, fromWallet *models.Wallet, toWallet *models.Wallet, fromCurrency money.Currency, toAmount money.Money, exchangeRate float64, idempotencyKey string) (*models.Transaction, error) {
@@ -143,18 +143,15 @@ func (ps *paymentService) processInternalTransferImmediate(ctx context.Context, 
 		return nil, err
 	}
 
-	fromBalance, err := ps.ledger.GetWalletBalance(ctx, tx, lockedFromWallet.ID, fromCurrency)
-	if err != nil {
-		return nil, err
-	}
-
-	if fromBalance < fromAmount {
+	if lockedFromWallet.Balance < fromAmount {
 		return nil, utils.BadRequestErr("insufficient funds")
 	}
 
 	exchangeRateStr := strconv.FormatFloat(exchangeRate, 'f', 8, 64)
+	traceID := utils.TraceIDFromContext(ctx)
 	transaction, err := queries.CreateTransaction(ctx, gen.CreateTransactionParams{
 		IdempotencyKey: idempotencyKey,
+		TraceID:        sql.NullString{String: traceID, Valid: traceID != ""},
 		FromWalletID:   lockedFromWallet.ID,
 		ToWalletID:     sql.NullString{String: lockedToWallet.ID, Valid: true},
 		Type:           string(models.TransactionTypeInternal),
@@ -191,25 +188,28 @@ func (ps *paymentService) processInternalTransferImmediate(ctx context.Context, 
 		return nil, utils.ServerErr(fmt.Errorf("update transaction status: %w", err))
 	}
 
-	newFromBalance, err := ps.ledger.GetWalletBalance(ctx, tx, lockedFromWallet.ID, fromCurrency)
+	fromWalletMoney := money.NewMoney(lockedFromWallet.Balance, fromCurrency)
+	fromAmountMoney := money.NewMoney(fromAmount, fromCurrency)
+	newFromBalanceMoney, err := fromWalletMoney.Subtract(fromAmountMoney)
 	if err != nil {
-		return nil, err
+		return nil, utils.ServerErr(fmt.Errorf("calculate new from balance: %w", err))
 	}
 
-	newToBalance, err := ps.ledger.GetWalletBalance(ctx, tx, lockedToWallet.ID, toAmount.Currency)
+	toWalletMoney := money.NewMoney(lockedToWallet.Balance, toAmount.Currency)
+	newToBalanceMoney, err := toWalletMoney.Add(toAmount)
 	if err != nil {
-		return nil, err
+		return nil, utils.ServerErr(fmt.Errorf("calculate new to balance: %w", err))
 	}
 
 	if err := queries.UpdateWalletBalance(ctx, gen.UpdateWalletBalanceParams{
-		Balance: newFromBalance,
+		Balance: newFromBalanceMoney.Amount,
 		ID:      lockedFromWallet.ID,
 	}); err != nil {
 		return nil, utils.ServerErr(fmt.Errorf("update from wallet balance: %w", err))
 	}
 
 	if err := queries.UpdateWalletBalance(ctx, gen.UpdateWalletBalanceParams{
-		Balance: newToBalance,
+		Balance: newToBalanceMoney.Amount,
 		ID:      lockedToWallet.ID,
 	}); err != nil {
 		return nil, utils.ServerErr(fmt.Errorf("update to wallet balance: %w", err))
@@ -241,20 +241,17 @@ func (ps *paymentService) processInternalTransferImmediate(ctx context.Context, 
 	}, nil
 }
 
-func (ps *paymentService) createInitiatedInternalTransfer(ctx context.Context, fromWallet *models.Wallet, toWallet *models.Wallet, fromCurrency money.Currency, toAmount money.Money, exchangeRate float64, idempotencyKey string) (*models.Transaction, error) {
+func (ps *paymentService) createInitiatedInternalTransfer(ctx context.Context, fromWallet *models.Wallet, toWallet *models.Wallet, toAmount money.Money, exchangeRate float64, idempotencyKey string) (*models.Transaction, error) {
 	fromAmount := int64(float64(toAmount.Amount) / exchangeRate)
-	fromBalance, err := ps.ledger.GetWalletBalance(ctx, nil, fromWallet.ID, fromCurrency)
-	if err != nil {
-		return nil, err
-	}
-
-	if fromBalance < fromAmount {
+	if fromWallet.Balance < fromAmount {
 		return nil, utils.BadRequestErr("insufficient funds")
 	}
 
 	exchangeRateStr := strconv.FormatFloat(exchangeRate, 'f', 8, 64)
+	traceID := utils.TraceIDFromContext(ctx)
 	transaction, err := ps.queries.CreateTransaction(ctx, gen.CreateTransactionParams{
 		IdempotencyKey: idempotencyKey,
+		TraceID:        sql.NullString{String: traceID, Valid: traceID != ""},
 		FromWalletID:   fromWallet.ID,
 		ToWalletID:     sql.NullString{String: toWallet.ID, Valid: true},
 		Type:           string(models.TransactionTypeInternal),
@@ -430,12 +427,7 @@ func (ps *paymentService) confirmInternalTransfer(ctx context.Context, transacti
 		return nil, err
 	}
 
-	fromBalance, err := ps.ledger.GetWalletBalance(ctx, tx, lockedFromWallet.ID, fromCurrency)
-	if err != nil {
-		return nil, err
-	}
-
-	if fromBalance < fromAmount {
+	if lockedFromWallet.Balance < fromAmount {
 		return nil, utils.BadRequestErr("insufficient funds")
 	}
 
@@ -454,25 +446,29 @@ func (ps *paymentService) confirmInternalTransfer(ctx context.Context, transacti
 		return nil, utils.ServerErr(fmt.Errorf("update transaction status: %w", err))
 	}
 
-	newFromBalance, err := ps.ledger.GetWalletBalance(ctx, tx, lockedFromWallet.ID, fromCurrency)
+	fromWalletMoney := money.NewMoney(lockedFromWallet.Balance, fromCurrency)
+	fromAmountMoney := money.NewMoney(fromAmount, fromCurrency)
+	newFromBalanceMoney, err := fromWalletMoney.Subtract(fromAmountMoney)
 	if err != nil {
-		return nil, err
+		return nil, utils.ServerErr(fmt.Errorf("calculate new from balance: %w", err))
 	}
 
-	newToBalance, err := ps.ledger.GetWalletBalance(ctx, tx, lockedToWallet.ID, toCurrency)
+	toWalletMoney := money.NewMoney(lockedToWallet.Balance, toCurrency)
+	toAmountMoney := money.NewMoney(transaction.Amount, toCurrency)
+	newToBalanceMoney, err := toWalletMoney.Add(toAmountMoney)
 	if err != nil {
-		return nil, err
+		return nil, utils.ServerErr(fmt.Errorf("calculate new to balance: %w", err))
 	}
 
 	if err := queries.UpdateWalletBalance(ctx, gen.UpdateWalletBalanceParams{
-		Balance: newFromBalance,
+		Balance: newFromBalanceMoney.Amount,
 		ID:      lockedFromWallet.ID,
 	}); err != nil {
 		return nil, utils.ServerErr(fmt.Errorf("update from wallet balance: %w", err))
 	}
 
 	if err := queries.UpdateWalletBalance(ctx, gen.UpdateWalletBalanceParams{
-		Balance: newToBalance,
+		Balance: newToBalanceMoney.Amount,
 		ID:      lockedToWallet.ID,
 	}); err != nil {
 		return nil, utils.ServerErr(fmt.Errorf("update to wallet balance: %w", err))

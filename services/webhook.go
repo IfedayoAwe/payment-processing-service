@@ -18,9 +18,9 @@ type webhookService struct {
 	queries *gen.Queries
 }
 
-func (s *Services) Webhook() WebhookService {
+func newWebhookService(queries *gen.Queries) WebhookService {
 	return &webhookService{
-		queries: s.queries,
+		queries: queries,
 	}
 }
 

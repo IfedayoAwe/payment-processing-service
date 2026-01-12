@@ -25,10 +25,10 @@ type walletService struct {
 	db      *sql.DB
 }
 
-func (s *Services) Wallet() WalletService {
+func newWalletService(queries gen.Querier, db *sql.DB) WalletService {
 	return &walletService{
-		queries: s.queries,
-		db:      s.db,
+		queries: queries,
+		db:      db,
 	}
 }
 

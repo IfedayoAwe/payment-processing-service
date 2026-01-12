@@ -1,12 +1,12 @@
 -- name: GetTransactionByID :one
-SELECT id, idempotency_key, from_wallet_id, to_wallet_id, type, amount, currency,
+SELECT id, idempotency_key, trace_id, from_wallet_id, to_wallet_id, type, amount, currency,
        status, provider_name, provider_reference, exchange_rate, failure_reason,
        created_at, updated_at
 FROM transactions
 WHERE id = $1;
 
 -- name: GetTransactionByIdempotencyKey :one
-SELECT id, idempotency_key, from_wallet_id, to_wallet_id, type, amount, currency,
+SELECT id, idempotency_key, trace_id, from_wallet_id, to_wallet_id, type, amount, currency,
        status, provider_name, provider_reference, exchange_rate, failure_reason,
        created_at, updated_at
 FROM transactions
@@ -14,9 +14,9 @@ WHERE idempotency_key = $1;
 
 -- name: CreateTransaction :one
 INSERT INTO transactions (
-    id, idempotency_key, from_wallet_id, to_wallet_id, type, amount, currency, status, exchange_rate
+    id, idempotency_key, trace_id, from_wallet_id, to_wallet_id, type, amount, currency, status, exchange_rate
 )
-VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8)
+VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
 -- name: UpdateTransactionStatus :exec
@@ -35,7 +35,7 @@ SET status = $1, failure_reason = $2, updated_at = NOW()
 WHERE id = $3;
 
 -- name: ListTransactionsByUser :many
-SELECT t.id, t.idempotency_key, t.from_wallet_id, t.to_wallet_id, t.type, t.amount, t.currency,
+SELECT t.id, t.idempotency_key, t.trace_id, t.from_wallet_id, t.to_wallet_id, t.type, t.amount, t.currency,
        t.status, t.provider_name, t.provider_reference, t.exchange_rate, t.failure_reason,
        t.created_at, t.updated_at
 FROM transactions t

@@ -42,6 +42,7 @@ type Wallet struct {
 type Transaction struct {
 	ID                string
 	IdempotencyKey    string
+	TraceID           *string
 	FromWalletID      *string
 	ToWalletID        *string
 	Type              TransactionType
@@ -62,6 +63,8 @@ type LedgerEntry struct {
 	TransactionID string
 	Amount        int64
 	Currency      string
+	BalanceBefore int64
+	BalanceAfter  int64
 	CreatedAt     time.Time
 }
 

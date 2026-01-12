@@ -30,17 +30,21 @@ type IdempotencyKey struct {
 }
 
 type LedgerEntry struct {
-	ID            string    `db:"id" json:"id"`
-	WalletID      string    `db:"wallet_id" json:"wallet_id"`
-	TransactionID string    `db:"transaction_id" json:"transaction_id"`
-	Amount        int64     `db:"amount" json:"amount"`
-	Currency      string    `db:"currency" json:"currency"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
+	ID            string         `db:"id" json:"id"`
+	WalletID      sql.NullString `db:"wallet_id" json:"wallet_id"`
+	TransactionID string         `db:"transaction_id" json:"transaction_id"`
+	Amount        int64          `db:"amount" json:"amount"`
+	Currency      string         `db:"currency" json:"currency"`
+	AccountType   string         `db:"account_type" json:"account_type"`
+	BalanceBefore int64          `db:"balance_before" json:"balance_before"`
+	BalanceAfter  int64          `db:"balance_after" json:"balance_after"`
+	CreatedAt     time.Time      `db:"created_at" json:"created_at"`
 }
 
 type Transaction struct {
 	ID                string         `db:"id" json:"id"`
 	IdempotencyKey    string         `db:"idempotency_key" json:"idempotency_key"`
+	TraceID           sql.NullString `db:"trace_id" json:"trace_id"`
 	FromWalletID      string         `db:"from_wallet_id" json:"from_wallet_id"`
 	ToWalletID        sql.NullString `db:"to_wallet_id" json:"to_wallet_id"`
 	Type              string         `db:"type" json:"type"`

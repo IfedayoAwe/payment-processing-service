@@ -22,6 +22,11 @@ func (m *MockQuerier) CreateLedgerEntry(ctx context.Context, arg gen.CreateLedge
 	return args.Get(0).(gen.LedgerEntry), args.Error(1)
 }
 
+func (m *MockQuerier) CreateExternalSystemCreditEntry(ctx context.Context, arg gen.CreateExternalSystemCreditEntryParams) (gen.LedgerEntry, error) {
+	args := m.Called(ctx, arg)
+	return args.Get(0).(gen.LedgerEntry), args.Error(1)
+}
+
 func (m *MockQuerier) CreateTransaction(ctx context.Context, arg gen.CreateTransactionParams) (gen.Transaction, error) {
 	args := m.Called(ctx, arg)
 	return args.Get(0).(gen.Transaction), args.Error(1)

@@ -75,6 +75,11 @@ func (m *MockLedgerService) CreateCreditEntry(ctx context.Context, tx *sql.Tx, w
 	return args.Error(0)
 }
 
+func (m *MockLedgerService) CreateExternalSystemCreditEntry(ctx context.Context, tx *sql.Tx, transactionID string, amount int64, currency money.Currency) error {
+	args := m.Called(ctx, tx, transactionID, amount, currency)
+	return args.Error(0)
+}
+
 func (m *MockLedgerService) GetWalletBalance(ctx context.Context, tx *sql.Tx, walletID string, currency money.Currency) (int64, error) {
 	args := m.Called(ctx, tx, walletID, currency)
 	return args.Get(0).(int64), args.Error(1)

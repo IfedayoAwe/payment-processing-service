@@ -31,7 +31,7 @@ CREATE INDEX IF NOT EXISTS idx_bank_accounts_account_bank ON bank_accounts(accou
 CREATE TABLE IF NOT EXISTS wallets (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
-    bank_account_id TEXT REFERENCES bank_accounts(id),
+    bank_account_id TEXT,
     currency TEXT NOT NULL CHECK (currency IN ('USD', 'EUR', 'GBP')),
     balance BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -47,6 +47,7 @@ CREATE INDEX IF NOT EXISTS idx_wallets_bank_account_id ON wallets(bank_account_i
 CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY,
     idempotency_key TEXT UNIQUE NOT NULL,
+    trace_id TEXT,
     from_wallet_id TEXT NOT NULL,
     to_wallet_id TEXT,
     type TEXT NOT NULL CHECK (type IN ('internal', 'external')),
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_transactions_idempotency_key ON transactions(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_transactions_trace_id ON transactions(trace_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_from_wallet_id ON transactions(from_wallet_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_to_wallet_id ON transactions(to_wallet_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
@@ -70,10 +72,13 @@ CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_a
 
 CREATE TABLE IF NOT EXISTS ledger_entries (
     id TEXT PRIMARY KEY,
-    wallet_id TEXT NOT NULL,
+    wallet_id TEXT,
     transaction_id TEXT NOT NULL,
     amount BIGINT NOT NULL,
     currency TEXT NOT NULL CHECK (currency IN ('USD', 'EUR', 'GBP')),
+    account_type TEXT NOT NULL CHECK (account_type IN ('user_wallet', 'external_wallet')),
+    balance_before BIGINT NOT NULL,
+    balance_after BIGINT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 

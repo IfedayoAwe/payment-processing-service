@@ -70,9 +70,9 @@ Services expose only methods, not fields. Handlers interact with services throug
 
 ### 12. Double-Entry Ledger
 
-Every transaction creates both debit and credit entries. Internal transfers debit sender and credit receiver. External transfers debit user and credit company wallet.
+Every transaction creates both debit and credit entries. Internal transfers debit sender and credit receiver. External transfers debit user wallet and credit external system (ledger entries with NULL wallet_id represent balancing with the outside world).
 
-**Why:** Double-entry bookkeeping is the standard for financial systems. It ensures the accounting equation always balances and provides complete auditability.
+**Why:** Double-entry bookkeeping is the standard for financial systems. It ensures the accounting equation always balances and provides complete auditability. External system entries (NULL wallet_id) represent money leaving/entering the platform, balancing with external forces rather than an internal company wallet.
 
 ### 13. Wallet-Bank Account Linkage
 

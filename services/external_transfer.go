@@ -19,6 +19,7 @@ import (
 
 type ExternalTransferService interface {
 	CreateExternalTransfer(ctx context.Context, userID string, toAccountNumber string, toBankCode string, fromCurrency money.Currency, toAmount money.Money, exchangeRate float64, idempotencyKey string) (*models.Transaction, error)
+	confirmExternalTransfer(ctx context.Context, transaction gen.Transaction) (*models.Transaction, error)
 }
 
 type externalTransferService struct {
@@ -30,14 +31,14 @@ type externalTransferService struct {
 	provider *providers.Processor
 }
 
-func (s *Services) ExternalTransfer() ExternalTransferService {
+func newExternalTransferService(queries gen.Querier, db *sql.DB, wallet WalletService, ledger LedgerService, queue queue.Queue, provider *providers.Processor) ExternalTransferService {
 	return &externalTransferService{
-		queries:  s.queries,
-		db:       s.db,
-		wallet:   s.Wallet(),
-		ledger:   s.Ledger(),
-		queue:    s.queue,
-		provider: s.provider,
+		queries:  queries,
+		db:       db,
+		wallet:   wallet,
+		ledger:   ledger,
+		queue:    queue,
+		provider: provider,
 	}
 }
 
@@ -63,18 +64,16 @@ func (ets *externalTransferService) CreateExternalTransfer(ctx context.Context, 
 	}
 
 	fromAmount := int64(float64(toAmount.Amount) / exchangeRate)
-	fromBalance, err := ets.ledger.GetWalletBalance(ctx, nil, fromWallet.ID, fromCurrency)
-	if err != nil {
-		return nil, err
-	}
 
-	if fromBalance < fromAmount {
+	if fromWallet.Balance < fromAmount {
 		return nil, utils.BadRequestErr("insufficient funds")
 	}
 
 	exchangeRateStr := strconv.FormatFloat(exchangeRate, 'f', 8, 64)
+	traceID := utils.TraceIDFromContext(ctx)
 	transaction, err := ets.queries.CreateTransaction(ctx, gen.CreateTransactionParams{
 		IdempotencyKey: idempotencyKey,
+		TraceID:        sql.NullString{String: traceID, Valid: traceID != ""},
 		FromWalletID:   fromWallet.ID,
 		ToWalletID:     sql.NullString{Valid: false},
 		Type:           string(models.TransactionTypeExternal),
@@ -167,12 +166,7 @@ func (ets *externalTransferService) confirmExternalTransfer(ctx context.Context,
 		return nil, err
 	}
 
-	balance, err := ets.ledger.GetWalletBalance(ctx, tx, lockedWallet.ID, fromCurrency)
-	if err != nil {
-		return nil, err
-	}
-
-	if balance < fromAmount {
+	if lockedWallet.Balance < fromAmount {
 		return nil, utils.BadRequestErr("insufficient funds")
 	}
 
@@ -185,40 +179,22 @@ func (ets *externalTransferService) confirmExternalTransfer(ctx context.Context,
 		return nil, utils.ServerErr(fmt.Errorf("parse transaction currency: %w", err))
 	}
 
-	companyWallet, err := ets.wallet.LockWalletByUserAndCurrency(ctx, tx, "company_grey", toCurrency)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, utils.ServerErr(fmt.Errorf("company wallet not found for currency %s", toCurrency))
-		}
-		return nil, utils.ServerErr(fmt.Errorf("get company wallet: %w", err))
-	}
-
-	if err := ets.ledger.CreateCreditEntry(ctx, tx, companyWallet.ID, transaction.ID, transaction.Amount, toCurrency); err != nil {
+	if err := ets.ledger.CreateExternalSystemCreditEntry(ctx, tx, transaction.ID, transaction.Amount, toCurrency); err != nil {
 		return nil, err
 	}
 
-	newBalance, err := ets.ledger.GetWalletBalance(ctx, tx, lockedWallet.ID, fromCurrency)
+	walletMoney := money.NewMoney(lockedWallet.Balance, fromCurrency)
+	fromAmountMoney := money.NewMoney(fromAmount, fromCurrency)
+	newBalanceMoney, err := walletMoney.Subtract(fromAmountMoney)
 	if err != nil {
-		return nil, err
+		return nil, utils.ServerErr(fmt.Errorf("calculate new wallet balance: %w", err))
 	}
 
 	if err := queries.UpdateWalletBalance(ctx, gen.UpdateWalletBalanceParams{
-		Balance: newBalance,
+		Balance: newBalanceMoney.Amount,
 		ID:      lockedWallet.ID,
 	}); err != nil {
 		return nil, utils.ServerErr(fmt.Errorf("update wallet balance: %w", err))
-	}
-
-	companyBalance, err := ets.ledger.GetWalletBalance(ctx, tx, companyWallet.ID, toCurrency)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := queries.UpdateWalletBalance(ctx, gen.UpdateWalletBalanceParams{
-		Balance: companyBalance,
-		ID:      companyWallet.ID,
-	}); err != nil {
-		return nil, utils.ServerErr(fmt.Errorf("update company wallet balance: %w", err))
 	}
 
 	if err := queries.UpdateTransactionStatus(ctx, gen.UpdateTransactionStatusParams{
@@ -259,8 +235,14 @@ func (ets *externalTransferService) confirmExternalTransfer(ctx context.Context,
 		return nil, utils.ServerErr(fmt.Errorf("bank_code not found in recipient details"))
 	}
 
+	traceID := utils.TraceIDFromContext(ctx)
+	if transaction.TraceID.Valid {
+		traceID = transaction.TraceID.String
+	}
+
 	payload := queue.PayoutJobPayload{
 		TransactionID: transaction.ID,
+		TraceID:       traceID,
 		Amount:        transaction.Amount,
 		Currency:      transaction.Currency,
 		AccountNumber: accountNumber,
@@ -268,6 +250,7 @@ func (ets *externalTransferService) confirmExternalTransfer(ctx context.Context,
 	}
 
 	utils.Logger.Info().
+		Str("trace_id", traceID).
 		Str("transaction_id", transaction.ID).
 		Str("account_number", accountNumber).
 		Str("bank_code", bankCode).
@@ -278,6 +261,7 @@ func (ets *externalTransferService) confirmExternalTransfer(ctx context.Context,
 	}
 
 	utils.Logger.Info().
+		Str("trace_id", traceID).
 		Str("transaction_id", transaction.ID).
 		Msg("payout job enqueued successfully")
 
@@ -286,10 +270,7 @@ func (ets *externalTransferService) confirmExternalTransfer(ctx context.Context,
 		return nil, utils.ServerErr(fmt.Errorf("get updated transaction: %w", err))
 	}
 
-	mappedTx := mapTransaction(updatedTransaction)
-	mappedTx.Status = models.TransactionStatusCompleted
-
-	return mappedTx, nil
+	return mapTransaction(updatedTransaction), nil
 }
 
 func (ets *externalTransferService) getTransactionByIdempotencyKey(ctx context.Context, idempotencyKey string) (*models.Transaction, error) {

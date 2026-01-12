@@ -22,10 +22,10 @@ type webhookWorker struct {
 	queue   queue.Queue
 }
 
-func (s *Services) WebhookWorker() WebhookWorker {
+func newWebhookWorker(queries *gen.Queries, queue queue.Queue) WebhookWorker {
 	return &webhookWorker{
-		queries: s.queries,
-		queue:   s.queue,
+		queries: queries,
+		queue:   queue,
 	}
 }
 
@@ -64,7 +64,8 @@ func (ww *webhookWorker) StartWorker(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := ww.queue.Process(ctx, queue.JobTypeWebhook, ww.ProcessWebhookJob, 5*time.Second); err != nil {
-				utils.Logger.Error().Err(err).Str("job_type", string(queue.JobTypeWebhook)).Msg("error processing webhook job")
+				traceID := utils.TraceIDFromContext(ctx)
+				utils.Logger.Error().Err(err).Str("trace_id", traceID).Str("job_type", string(queue.JobTypeWebhook)).Msg("error processing webhook job")
 			}
 		}
 	}

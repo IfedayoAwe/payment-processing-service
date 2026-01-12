@@ -6,7 +6,6 @@ import (
 
 	"github.com/IfedayoAwe/payment-processing-service/handlers/requests"
 	"github.com/IfedayoAwe/payment-processing-service/queue"
-	service "github.com/IfedayoAwe/payment-processing-service/services"
 	"github.com/IfedayoAwe/payment-processing-service/utils"
 	"github.com/labstack/echo/v4"
 )
@@ -16,12 +15,12 @@ type WebhookHandler interface {
 }
 
 type webhookHandler struct {
-	services *service.Services
+	queue queue.Queue
 }
 
-func (h *Handlers) Webhook() WebhookHandler {
+func newWebhookHandler(queue queue.Queue) WebhookHandler {
 	return &webhookHandler{
-		services: h.services,
+		queue: queue,
 	}
 }
 
@@ -61,7 +60,7 @@ func (wh *webhookHandler) ReceiveWebhook(c echo.Context) error {
 		Payload:           body,
 	}
 
-	if err := wh.services.Queue().Enqueue(c.Request().Context(), queue.JobTypeWebhook, payload); err != nil {
+	if err := wh.queue.Enqueue(c.Request().Context(), queue.JobTypeWebhook, payload); err != nil {
 		return utils.HandleError(c, err)
 	}
 

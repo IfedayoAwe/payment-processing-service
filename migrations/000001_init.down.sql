@@ -20,6 +20,7 @@ DROP INDEX IF EXISTS idx_transactions_created_at;
 DROP INDEX IF EXISTS idx_transactions_status;
 DROP INDEX IF EXISTS idx_transactions_to_wallet_id;
 DROP INDEX IF EXISTS idx_transactions_from_wallet_id;
+DROP INDEX IF EXISTS idx_transactions_trace_id;
 DROP INDEX IF EXISTS idx_transactions_idempotency_key;
 DROP TABLE IF EXISTS transactions;
 

@@ -26,10 +26,10 @@ type nameEnquiryService struct {
 	provider *providers.Processor
 }
 
-func (s *Services) NameEnquiry() NameEnquiryService {
+func newNameEnquiryService(queries *gen.Queries, provider *providers.Processor) NameEnquiryService {
 	return &nameEnquiryService{
-		queries:  s.queries,
-		provider: s.provider,
+		queries:  queries,
+		provider: provider,
 	}
 }
 

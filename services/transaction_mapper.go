@@ -15,8 +15,11 @@ func mapTransaction(t gen.Transaction) *models.Transaction {
 		toWalletID = &t.ToWalletID.String
 	}
 
-	var providerName, providerRef, failureReason *string
+	var traceID, providerName, providerRef, failureReason *string
 	var exchangeRate *float64
+	if t.TraceID.Valid {
+		traceID = &t.TraceID.String
+	}
 	if t.ProviderName.Valid {
 		providerName = &t.ProviderName.String
 	}
@@ -35,6 +38,7 @@ func mapTransaction(t gen.Transaction) *models.Transaction {
 	return &models.Transaction{
 		ID:                t.ID,
 		IdempotencyKey:    t.IdempotencyKey,
+		TraceID:           traceID,
 		FromWalletID:      &fromWalletID,
 		ToWalletID:        toWalletID,
 		Type:              models.TransactionType(t.Type),

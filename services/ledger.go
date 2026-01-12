@@ -13,6 +13,7 @@ import (
 type LedgerService interface {
 	CreateDebitEntry(ctx context.Context, tx *sql.Tx, walletID string, transactionID string, amount int64, currency money.Currency) error
 	CreateCreditEntry(ctx context.Context, tx *sql.Tx, walletID string, transactionID string, amount int64, currency money.Currency) error
+	CreateExternalSystemCreditEntry(ctx context.Context, tx *sql.Tx, transactionID string, amount int64, currency money.Currency) error
 	GetWalletBalance(ctx context.Context, tx *sql.Tx, walletID string, currency money.Currency) (int64, error)
 }
 
@@ -20,9 +21,9 @@ type ledgerService struct {
 	queries gen.Querier
 }
 
-func (s *Services) Ledger() LedgerService {
+func newLedgerService(queries gen.Querier) LedgerService {
 	return &ledgerService{
-		queries: s.queries,
+		queries: queries,
 	}
 }
 
@@ -37,11 +38,21 @@ func (ls *ledgerService) CreateDebitEntry(ctx context.Context, tx *sql.Tx, walle
 	} else {
 		queries = ls.queries
 	}
-	_, err := queries.CreateLedgerEntry(ctx, gen.CreateLedgerEntryParams{
-		WalletID:      walletID,
+
+	balanceBefore, err := ls.GetWalletBalance(ctx, tx, walletID, currency)
+	if err != nil {
+		return utils.ServerErr(fmt.Errorf("get wallet balance before debit: %w", err))
+	}
+
+	balanceAfter := balanceBefore + amount
+
+	_, err = queries.CreateLedgerEntry(ctx, gen.CreateLedgerEntryParams{
+		WalletID:      sql.NullString{String: walletID, Valid: true},
 		TransactionID: transactionID,
 		Amount:        amount,
 		Currency:      currency.String(),
+		BalanceBefore: balanceBefore,
+		BalanceAfter:  balanceAfter,
 	})
 	if err != nil {
 		return utils.ServerErr(fmt.Errorf("create debit entry: %w", err))
@@ -61,14 +72,53 @@ func (ls *ledgerService) CreateCreditEntry(ctx context.Context, tx *sql.Tx, wall
 	} else {
 		queries = ls.queries
 	}
-	_, err := queries.CreateLedgerEntry(ctx, gen.CreateLedgerEntryParams{
-		WalletID:      walletID,
+
+	balanceBefore, err := ls.GetWalletBalance(ctx, tx, walletID, currency)
+	if err != nil {
+		return utils.ServerErr(fmt.Errorf("get wallet balance before credit: %w", err))
+	}
+
+	balanceAfter := balanceBefore + amount
+
+	_, err = queries.CreateLedgerEntry(ctx, gen.CreateLedgerEntryParams{
+		WalletID:      sql.NullString{String: walletID, Valid: true},
 		TransactionID: transactionID,
 		Amount:        amount,
 		Currency:      currency.String(),
+		BalanceBefore: balanceBefore,
+		BalanceAfter:  balanceAfter,
 	})
 	if err != nil {
 		return utils.ServerErr(fmt.Errorf("create credit entry: %w", err))
+	}
+
+	return nil
+}
+
+func (ls *ledgerService) CreateExternalSystemCreditEntry(ctx context.Context, tx *sql.Tx, transactionID string, amount int64, currency money.Currency) error {
+	if amount <= 0 {
+		return utils.BadRequestErr("external system credit amount must be positive")
+	}
+
+	var queries gen.Querier
+	if q, ok := ls.queries.(*gen.Queries); ok {
+		queries = q.WithTx(tx)
+	} else {
+		queries = ls.queries
+	}
+
+	balanceBefore := int64(0)
+	balanceAfter := amount
+
+	_, err := queries.CreateExternalSystemCreditEntry(ctx, gen.CreateExternalSystemCreditEntryParams{
+		TransactionID: transactionID,
+		Amount:        amount,
+		Currency:      currency.String(),
+		BalanceBefore: balanceBefore,
+		BalanceAfter:  balanceAfter,
+	})
+	if err != nil {
+		return utils.ServerErr(fmt.Errorf("create external system credit entry: %w", err))
 	}
 
 	return nil
@@ -87,7 +137,7 @@ func (ls *ledgerService) GetWalletBalance(ctx context.Context, tx *sql.Tx, walle
 	}
 
 	balance, err := queries.GetWalletBalance(ctx, gen.GetWalletBalanceParams{
-		WalletID: walletID,
+		WalletID: sql.NullString{String: walletID, Valid: true},
 		Currency: currency.String(),
 	})
 	if err != nil {

@@ -32,6 +32,7 @@ type Queue interface {
 
 type PayoutJobPayload struct {
 	TransactionID string `json:"transaction_id"`
+	TraceID       string `json:"trace_id"`
 	Amount        int64  `json:"amount"`
 	Currency      string `json:"currency"`
 	AccountNumber string `json:"account_number"`

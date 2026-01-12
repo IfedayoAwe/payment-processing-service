@@ -40,6 +40,7 @@ func Register(e *echo.Echo, cfg *config.Config, handlers *handlers.Handlers) {
 
 	api := e.Group("/api")
 	api.Use(emw.Logger(), emw.Recover())
+	api.Use(middleware.TraceIDMiddleware())
 	api.Use(middleware.UserIDMiddleware())
 
 	RegisterPaymentRoutes(api, handlers)
@@ -47,30 +48,26 @@ func Register(e *echo.Echo, cfg *config.Config, handlers *handlers.Handlers) {
 	// Test endpoint (no authentication required)
 	testApi := e.Group("/api/test")
 	testApi.Use(emw.Logger(), emw.Recover())
+	testApi.Use(middleware.TraceIDMiddleware())
 	RegisterTestRoutes(testApi, handlers)
 }
 
 func RegisterPaymentRoutes(api *echo.Group, handlers *handlers.Handlers) {
-	paymentHandler := handlers.Payment()
-	webhookHandler := handlers.Webhook()
-	nameEnquiryHandler := handlers.NameEnquiry()
+	api.GET("/exchange-rate", handlers.Payment.GetExchangeRate)
+	api.GET("/wallets", handlers.Payment.GetUserWallets)
+	api.GET("/transactions", handlers.Payment.GetTransactionHistory)
+	api.POST("/payments/internal", handlers.Payment.CreateInternalTransfer)
+	api.POST("/payments/external", handlers.Payment.CreateExternalTransfer)
+	api.POST("/payments/:id/confirm", handlers.Payment.ConfirmTransaction)
+	api.GET("/payments/:id", handlers.Payment.GetTransaction)
 
-	api.GET("/exchange-rate", paymentHandler.GetExchangeRate)
-	api.GET("/wallets", paymentHandler.GetUserWallets)
-	api.GET("/transactions", paymentHandler.GetTransactionHistory)
-	api.POST("/payments/internal", paymentHandler.CreateInternalTransfer)
-	api.POST("/payments/external", paymentHandler.CreateExternalTransfer)
-	api.POST("/payments/:id/confirm", paymentHandler.ConfirmTransaction)
-	api.GET("/payments/:id", paymentHandler.GetTransaction)
+	api.POST("/webhooks/:provider", handlers.Webhook.ReceiveWebhook)
 
-	api.POST("/webhooks/:provider", webhookHandler.ReceiveWebhook)
-
-	api.POST("/name-enquiry", nameEnquiryHandler.EnquireAccountName)
+	api.POST("/name-enquiry", handlers.NameEnquiry.EnquireAccountName)
 }
 
 func RegisterTestRoutes(testApi *echo.Group, handlers *handlers.Handlers) {
-	paymentHandler := handlers.Payment()
-	testApi.GET("/users", paymentHandler.GetTestUsers)
+	testApi.GET("/users", handlers.Payment.GetTestUsers)
 }
 
 func getOpenAPISpec() map[string]interface{} {

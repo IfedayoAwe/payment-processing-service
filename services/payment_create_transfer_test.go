@@ -316,11 +316,11 @@ func TestPaymentService_CreateExternalTransfer_Comprehensive(t *testing.T) {
 			ID:       "wallet_1",
 			UserID:   "user_1",
 			Currency: "USD",
+			Balance:  1000,
 		}
 
 		mockQueries.On("GetTransactionByIdempotencyKey", mock.Anything, "key_1").Return(gen.Transaction{}, sql.ErrNoRows)
 		mockWallet.On("GetWalletByUserAndCurrency", mock.Anything, "user_1", money.USD).Return(fromWallet, nil)
-		mockLedger.On("GetWalletBalance", mock.Anything, mock.Anything, "wallet_1", money.USD).Return(int64(1000), nil)
 
 		amount := money.NewMoney(10000, money.USD)
 		result, err := ps.CreateExternalTransfer(context.Background(), "user_1", "1234567890", "044", money.USD, amount, "key_1")

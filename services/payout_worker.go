@@ -26,11 +26,11 @@ type payoutWorker struct {
 	queue    queue.Queue
 }
 
-func (s *Services) PayoutWorker() PayoutWorker {
+func newPayoutWorker(queries *gen.Queries, provider *providers.Processor, queue queue.Queue) PayoutWorker {
 	return &payoutWorker{
-		queries:  s.queries,
-		provider: s.provider,
-		queue:    s.queue,
+		queries:  queries,
+		provider: provider,
+		queue:    queue,
 	}
 }
 
@@ -40,7 +40,10 @@ func (pw *payoutWorker) ProcessPayoutJob(ctx context.Context, job *queue.Job) er
 		return fmt.Errorf("unmarshal payout job payload: %w", err)
 	}
 
+	ctx = utils.WithTraceID(ctx, payload.TraceID)
+
 	utils.Logger.Info().
+		Str("trace_id", payload.TraceID).
 		Str("transaction_id", payload.TransactionID).
 		Str("account_number", payload.AccountNumber).
 		Str("bank_code", payload.BankCode).
@@ -85,6 +88,7 @@ func (pw *payoutWorker) ProcessPayoutJob(ctx context.Context, job *queue.Job) er
 		},
 		Metadata: map[string]string{
 			"transaction_id": payload.TransactionID,
+			"trace_id":       payload.TraceID,
 		},
 		ProviderRef: &providerRef,
 	}
@@ -150,7 +154,8 @@ func (pw *payoutWorker) StartWorker(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := pw.queue.Process(ctx, queue.JobTypePayout, pw.ProcessPayoutJob, 5*time.Second); err != nil {
-				utils.Logger.Error().Err(err).Str("job_type", string(queue.JobTypePayout)).Msg("error processing payout job")
+				traceID := utils.TraceIDFromContext(ctx)
+				utils.Logger.Error().Err(err).Str("trace_id", traceID).Str("job_type", string(queue.JobTypePayout)).Msg("error processing payout job")
 			}
 		}
 	}

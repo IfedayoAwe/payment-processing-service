@@ -7,27 +7,30 @@ package gen
 
 import (
 	"context"
+	"database/sql"
 )
 
-const createLedgerEntry = `-- name: CreateLedgerEntry :one
-INSERT INTO ledger_entries (id, wallet_id, transaction_id, amount, currency)
-VALUES (gen_random_uuid()::text, $1, $2, $3, $4)
-RETURNING id, wallet_id, transaction_id, amount, currency, created_at
+const createExternalSystemCreditEntry = `-- name: CreateExternalSystemCreditEntry :one
+INSERT INTO ledger_entries (id, wallet_id, transaction_id, amount, currency, account_type, balance_before, balance_after)
+VALUES (gen_random_uuid()::text, NULL, $1, $2, $3, 'external_wallet', $4, $5)
+RETURNING id, wallet_id, transaction_id, amount, currency, account_type, balance_before, balance_after, created_at
 `
 
-type CreateLedgerEntryParams struct {
-	WalletID      string `db:"wallet_id" json:"wallet_id"`
+type CreateExternalSystemCreditEntryParams struct {
 	TransactionID string `db:"transaction_id" json:"transaction_id"`
 	Amount        int64  `db:"amount" json:"amount"`
 	Currency      string `db:"currency" json:"currency"`
+	BalanceBefore int64  `db:"balance_before" json:"balance_before"`
+	BalanceAfter  int64  `db:"balance_after" json:"balance_after"`
 }
 
-func (q *Queries) CreateLedgerEntry(ctx context.Context, arg CreateLedgerEntryParams) (LedgerEntry, error) {
-	row := q.db.QueryRowContext(ctx, createLedgerEntry,
-		arg.WalletID,
+func (q *Queries) CreateExternalSystemCreditEntry(ctx context.Context, arg CreateExternalSystemCreditEntryParams) (LedgerEntry, error) {
+	row := q.db.QueryRowContext(ctx, createExternalSystemCreditEntry,
 		arg.TransactionID,
 		arg.Amount,
 		arg.Currency,
+		arg.BalanceBefore,
+		arg.BalanceAfter,
 	)
 	var i LedgerEntry
 	err := row.Scan(
@@ -36,6 +39,48 @@ func (q *Queries) CreateLedgerEntry(ctx context.Context, arg CreateLedgerEntryPa
 		&i.TransactionID,
 		&i.Amount,
 		&i.Currency,
+		&i.AccountType,
+		&i.BalanceBefore,
+		&i.BalanceAfter,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createLedgerEntry = `-- name: CreateLedgerEntry :one
+INSERT INTO ledger_entries (id, wallet_id, transaction_id, amount, currency, account_type, balance_before, balance_after)
+VALUES (gen_random_uuid()::text, $1, $2, $3, $4, 'user_wallet', $5, $6)
+RETURNING id, wallet_id, transaction_id, amount, currency, account_type, balance_before, balance_after, created_at
+`
+
+type CreateLedgerEntryParams struct {
+	WalletID      sql.NullString `db:"wallet_id" json:"wallet_id"`
+	TransactionID string         `db:"transaction_id" json:"transaction_id"`
+	Amount        int64          `db:"amount" json:"amount"`
+	Currency      string         `db:"currency" json:"currency"`
+	BalanceBefore int64          `db:"balance_before" json:"balance_before"`
+	BalanceAfter  int64          `db:"balance_after" json:"balance_after"`
+}
+
+func (q *Queries) CreateLedgerEntry(ctx context.Context, arg CreateLedgerEntryParams) (LedgerEntry, error) {
+	row := q.db.QueryRowContext(ctx, createLedgerEntry,
+		arg.WalletID,
+		arg.TransactionID,
+		arg.Amount,
+		arg.Currency,
+		arg.BalanceBefore,
+		arg.BalanceAfter,
+	)
+	var i LedgerEntry
+	err := row.Scan(
+		&i.ID,
+		&i.WalletID,
+		&i.TransactionID,
+		&i.Amount,
+		&i.Currency,
+		&i.AccountType,
+		&i.BalanceBefore,
+		&i.BalanceAfter,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -44,12 +89,12 @@ func (q *Queries) CreateLedgerEntry(ctx context.Context, arg CreateLedgerEntryPa
 const getWalletBalance = `-- name: GetWalletBalance :one
 SELECT COALESCE(SUM(amount), 0)::BIGINT as balance
 FROM ledger_entries
-WHERE wallet_id = $1 AND currency = $2
+WHERE wallet_id = $1 AND currency = $2 AND account_type = 'user_wallet'
 `
 
 type GetWalletBalanceParams struct {
-	WalletID string `db:"wallet_id" json:"wallet_id"`
-	Currency string `db:"currency" json:"currency"`
+	WalletID sql.NullString `db:"wallet_id" json:"wallet_id"`
+	Currency string         `db:"currency" json:"currency"`
 }
 
 func (q *Queries) GetWalletBalance(ctx context.Context, arg GetWalletBalanceParams) (int64, error) {

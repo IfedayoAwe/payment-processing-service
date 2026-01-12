@@ -10,6 +10,7 @@ import (
 )
 
 type Querier interface {
+	CreateExternalSystemCreditEntry(ctx context.Context, arg CreateExternalSystemCreditEntryParams) (LedgerEntry, error)
 	CreateIdempotencyKey(ctx context.Context, arg CreateIdempotencyKeyParams) (IdempotencyKey, error)
 	CreateLedgerEntry(ctx context.Context, arg CreateLedgerEntryParams) (LedgerEntry, error)
 	CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error)

@@ -13,12 +13,12 @@ type NameEnquiryHandler interface {
 }
 
 type nameEnquiryHandler struct {
-	services *service.Services
+	nameEnquiryService service.NameEnquiryService
 }
 
-func (h *Handlers) NameEnquiry() NameEnquiryHandler {
+func newNameEnquiryHandler(nameEnquiryService service.NameEnquiryService) NameEnquiryHandler {
 	return &nameEnquiryHandler{
-		services: h.services,
+		nameEnquiryService: nameEnquiryService,
 	}
 }
 
@@ -32,7 +32,7 @@ func (neh *nameEnquiryHandler) EnquireAccountName(c echo.Context) error {
 		return utils.ValidationError(c, utils.FormatValidationErrors(err))
 	}
 
-	result, err := neh.services.NameEnquiry().EnquireAccountName(c.Request().Context(), req.AccountNumber, req.BankCode)
+	result, err := neh.nameEnquiryService.EnquireAccountName(c.Request().Context(), req.AccountNumber, req.BankCode)
 	if err != nil {
 		return utils.HandleError(c, err)
 	}

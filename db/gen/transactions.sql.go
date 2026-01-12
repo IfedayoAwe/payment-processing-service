@@ -13,14 +13,15 @@ import (
 
 const createTransaction = `-- name: CreateTransaction :one
 INSERT INTO transactions (
-    id, idempotency_key, from_wallet_id, to_wallet_id, type, amount, currency, status, exchange_rate
+    id, idempotency_key, trace_id, from_wallet_id, to_wallet_id, type, amount, currency, status, exchange_rate
 )
-VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, idempotency_key, from_wallet_id, to_wallet_id, type, amount, currency, status, provider_name, provider_reference, exchange_rate, failure_reason, created_at, updated_at
+VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, idempotency_key, trace_id, from_wallet_id, to_wallet_id, type, amount, currency, status, provider_name, provider_reference, exchange_rate, failure_reason, created_at, updated_at
 `
 
 type CreateTransactionParams struct {
 	IdempotencyKey string         `db:"idempotency_key" json:"idempotency_key"`
+	TraceID        sql.NullString `db:"trace_id" json:"trace_id"`
 	FromWalletID   string         `db:"from_wallet_id" json:"from_wallet_id"`
 	ToWalletID     sql.NullString `db:"to_wallet_id" json:"to_wallet_id"`
 	Type           string         `db:"type" json:"type"`
@@ -33,6 +34,7 @@ type CreateTransactionParams struct {
 func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error) {
 	row := q.db.QueryRowContext(ctx, createTransaction,
 		arg.IdempotencyKey,
+		arg.TraceID,
 		arg.FromWalletID,
 		arg.ToWalletID,
 		arg.Type,
@@ -45,6 +47,7 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 	err := row.Scan(
 		&i.ID,
 		&i.IdempotencyKey,
+		&i.TraceID,
 		&i.FromWalletID,
 		&i.ToWalletID,
 		&i.Type,
@@ -62,7 +65,7 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 }
 
 const getTransactionByID = `-- name: GetTransactionByID :one
-SELECT id, idempotency_key, from_wallet_id, to_wallet_id, type, amount, currency,
+SELECT id, idempotency_key, trace_id, from_wallet_id, to_wallet_id, type, amount, currency,
        status, provider_name, provider_reference, exchange_rate, failure_reason,
        created_at, updated_at
 FROM transactions
@@ -75,6 +78,7 @@ func (q *Queries) GetTransactionByID(ctx context.Context, id string) (Transactio
 	err := row.Scan(
 		&i.ID,
 		&i.IdempotencyKey,
+		&i.TraceID,
 		&i.FromWalletID,
 		&i.ToWalletID,
 		&i.Type,
@@ -92,7 +96,7 @@ func (q *Queries) GetTransactionByID(ctx context.Context, id string) (Transactio
 }
 
 const getTransactionByIdempotencyKey = `-- name: GetTransactionByIdempotencyKey :one
-SELECT id, idempotency_key, from_wallet_id, to_wallet_id, type, amount, currency,
+SELECT id, idempotency_key, trace_id, from_wallet_id, to_wallet_id, type, amount, currency,
        status, provider_name, provider_reference, exchange_rate, failure_reason,
        created_at, updated_at
 FROM transactions
@@ -105,6 +109,7 @@ func (q *Queries) GetTransactionByIdempotencyKey(ctx context.Context, idempotenc
 	err := row.Scan(
 		&i.ID,
 		&i.IdempotencyKey,
+		&i.TraceID,
 		&i.FromWalletID,
 		&i.ToWalletID,
 		&i.Type,
@@ -122,7 +127,7 @@ func (q *Queries) GetTransactionByIdempotencyKey(ctx context.Context, idempotenc
 }
 
 const listTransactionsByUser = `-- name: ListTransactionsByUser :many
-SELECT t.id, t.idempotency_key, t.from_wallet_id, t.to_wallet_id, t.type, t.amount, t.currency,
+SELECT t.id, t.idempotency_key, t.trace_id, t.from_wallet_id, t.to_wallet_id, t.type, t.amount, t.currency,
        t.status, t.provider_name, t.provider_reference, t.exchange_rate, t.failure_reason,
        t.created_at, t.updated_at
 FROM transactions t
@@ -161,6 +166,7 @@ func (q *Queries) ListTransactionsByUser(ctx context.Context, arg ListTransactio
 		if err := rows.Scan(
 			&i.ID,
 			&i.IdempotencyKey,
+			&i.TraceID,
 			&i.FromWalletID,
 			&i.ToWalletID,
 			&i.Type,

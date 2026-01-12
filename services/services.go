@@ -13,11 +13,16 @@ import (
 )
 
 type Services struct {
-	db       *sql.DB
-	queries  *gen.Queries
-	config   *config.Config
-	provider *providers.Processor
-	queue    queue.Queue
+	Payment          PaymentService
+	Wallet           WalletService
+	Ledger           LedgerService
+	ExternalTransfer ExternalTransferService
+	NameEnquiry      NameEnquiryService
+	Webhook          WebhookService
+	PayoutWorker     PayoutWorker
+	WebhookWorker    WebhookWorker
+	Queries          *gen.Queries
+	Queue            queue.Queue
 }
 
 func NewServices(db *sql.DB, queries *gen.Queries, cfg *config.Config, redisClient *redis.Client) *Services {
@@ -28,21 +33,27 @@ func NewServices(db *sql.DB, queries *gen.Queries, cfg *config.Config, redisClie
 		q = queue.NewRedisQueue(redisClient)
 	}
 
+	ledgerService := newLedgerService(queries)
+	walletService := newWalletService(queries, db)
+	externalTransferService := newExternalTransferService(queries, db, walletService, ledgerService, q, processor)
+	paymentService := newPaymentService(queries, db, walletService, ledgerService, externalTransferService, processor)
+	nameEnquiryService := newNameEnquiryService(queries, processor)
+	webhookService := newWebhookService(queries)
+	payoutWorker := newPayoutWorker(queries, processor, q)
+	webhookWorker := newWebhookWorker(queries, q)
+
 	return &Services{
-		db:       db,
-		queries:  queries,
-		config:   cfg,
-		provider: processor,
-		queue:    q,
+		Payment:          paymentService,
+		Wallet:           walletService,
+		Ledger:           ledgerService,
+		ExternalTransfer: externalTransferService,
+		NameEnquiry:      nameEnquiryService,
+		Webhook:          webhookService,
+		PayoutWorker:     payoutWorker,
+		WebhookWorker:    webhookWorker,
+		Queries:          queries,
+		Queue:            q,
 	}
-}
-
-func (s *Services) Queue() queue.Queue {
-	return s.queue
-}
-
-func (s *Services) Queries() *gen.Queries {
-	return s.queries
 }
 
 func (s *Services) StartWorkers(ctx context.Context) {
@@ -50,15 +61,16 @@ func (s *Services) StartWorkers(ctx context.Context) {
 		name   string
 		worker func(context.Context) error
 	}{
-		{"payout", s.PayoutWorker().StartWorker},
-		{"webhook", s.WebhookWorker().StartWorker},
+		{"payout", s.PayoutWorker.StartWorker},
+		{"webhook", s.WebhookWorker.StartWorker},
 	}
 
 	for _, w := range workers {
 		go func(name string, start func(context.Context) error) {
-			utils.Logger.Info().Str("worker", name).Msg("starting worker")
+			traceID := utils.TraceIDFromContext(ctx)
+			utils.Logger.Info().Str("trace_id", traceID).Str("worker", name).Msg("starting worker")
 			if err := start(ctx); err != nil && err != context.Canceled {
-				utils.Logger.Error().Err(err).Str("worker", name).Msg("worker error")
+				utils.Logger.Error().Err(err).Str("trace_id", traceID).Str("worker", name).Msg("worker error")
 			}
 		}(w.name, w.worker)
 	}
