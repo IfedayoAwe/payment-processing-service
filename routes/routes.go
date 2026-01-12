@@ -560,7 +560,7 @@ func getConfirmTransactionEndpoint() map[string]interface{} {
 									"value": map[string]interface{}{
 										"data": map[string]interface{}{
 											"id":                 "tx-id",
-											"status":             "completed",
+											"status":             "pending",
 											"amount":             50.00,
 											"currency":           "GBP",
 											"provider_reference": "{\"account_number\":\"9999999999\",\"bank_code\":\"044\"}",
