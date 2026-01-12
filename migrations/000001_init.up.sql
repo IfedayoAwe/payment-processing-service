@@ -111,3 +111,16 @@ CREATE INDEX IF NOT EXISTS idx_webhook_events_provider_reference ON webhook_even
 CREATE INDEX IF NOT EXISTS idx_webhook_events_transaction_id ON webhook_events(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_webhook_events_processed ON webhook_events(processed);
 CREATE INDEX IF NOT EXISTS idx_webhook_events_created_at ON webhook_events(created_at);
+
+CREATE TABLE IF NOT EXISTS outbox (
+    id TEXT PRIMARY KEY,
+    job_type TEXT NOT NULL CHECK (job_type IN ('payout', 'webhook')),
+    payload JSONB NOT NULL,
+    processed BOOLEAN NOT NULL DEFAULT FALSE,
+    processed_at TIMESTAMP WITH TIME ZONE,
+    retry_count INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_processed ON outbox(processed, created_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_job_type ON outbox(job_type, processed);

@@ -212,10 +212,6 @@ func (ets *externalTransferService) confirmExternalTransfer(ctx context.Context,
 		return nil, utils.ServerErr(fmt.Errorf("create idempotency key: %w", err))
 	}
 
-	if err := tx.Commit(); err != nil {
-		return nil, utils.ServerErr(fmt.Errorf("commit transaction: %w", err))
-	}
-
 	if !transaction.ProviderReference.Valid {
 		return nil, utils.ServerErr(fmt.Errorf("recipient details not found in transaction"))
 	}
@@ -249,21 +245,22 @@ func (ets *externalTransferService) confirmExternalTransfer(ctx context.Context,
 		BankCode:      bankCode,
 	}
 
-	utils.Logger.Info().
-		Str("trace_id", traceID).
-		Str("transaction_id", transaction.ID).
-		Str("account_number", accountNumber).
-		Str("bank_code", bankCode).
-		Msg("enqueuing payout job")
-
-	if err := ets.queue.Enqueue(ctx, queue.JobTypePayout, payload); err != nil {
-		return nil, utils.ServerErr(fmt.Errorf("enqueue payout job: %w", err))
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return nil, utils.ServerErr(fmt.Errorf("marshal payout payload: %w", err))
 	}
 
-	utils.Logger.Info().
-		Str("trace_id", traceID).
-		Str("transaction_id", transaction.ID).
-		Msg("payout job enqueued successfully")
+	_, err = queries.CreateOutboxEntry(ctx, gen.CreateOutboxEntryParams{
+		JobType: string(queue.JobTypePayout),
+		Payload: payloadJSON,
+	})
+	if err != nil {
+		return nil, utils.ServerErr(fmt.Errorf("create outbox entry: %w", err))
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, utils.ServerErr(fmt.Errorf("commit transaction: %w", err))
+	}
 
 	updatedTransaction, err := ets.queries.GetTransactionByID(ctx, transaction.ID)
 	if err != nil {

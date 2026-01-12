@@ -163,6 +163,29 @@ func (m *MockQuerier) UpdateWalletBalance(ctx context.Context, arg gen.UpdateWal
 	return args.Error(0)
 }
 
+func (m *MockQuerier) CreateOutboxEntry(ctx context.Context, arg gen.CreateOutboxEntryParams) (gen.Outbox, error) {
+	args := m.Called(ctx, arg)
+	return args.Get(0).(gen.Outbox), args.Error(1)
+}
+
+func (m *MockQuerier) GetUnprocessedOutboxEntries(ctx context.Context, limit int32) ([]gen.Outbox, error) {
+	args := m.Called(ctx, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]gen.Outbox), args.Error(1)
+}
+
+func (m *MockQuerier) MarkOutboxEntryProcessed(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *MockQuerier) IncrementOutboxRetryCount(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
 func (m *MockQuerier) WithTx(tx *sql.Tx) gen.Querier {
 	args := m.Called(tx)
 	if args.Get(0) == nil {

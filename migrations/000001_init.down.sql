@@ -1,3 +1,7 @@
+DROP INDEX IF EXISTS idx_outbox_job_type;
+DROP INDEX IF EXISTS idx_outbox_processed;
+DROP TABLE IF EXISTS outbox;
+
 DROP INDEX IF EXISTS idx_webhook_events_created_at;
 DROP INDEX IF EXISTS idx_webhook_events_processed;
 DROP INDEX IF EXISTS idx_webhook_events_transaction_id;

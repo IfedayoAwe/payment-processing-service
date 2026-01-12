@@ -21,6 +21,7 @@ type Services struct {
 	Webhook          WebhookService
 	PayoutWorker     PayoutWorker
 	WebhookWorker    WebhookWorker
+	OutboxWorker     OutboxWorker
 	Queries          *gen.Queries
 	Queue            queue.Queue
 }
@@ -41,6 +42,7 @@ func NewServices(db *sql.DB, queries *gen.Queries, cfg *config.Config, redisClie
 	webhookService := newWebhookService(queries)
 	payoutWorker := newPayoutWorker(queries, processor, q)
 	webhookWorker := newWebhookWorker(queries, q)
+	outboxWorker := newOutboxWorker(queries, db, q)
 
 	return &Services{
 		Payment:          paymentService,
@@ -51,6 +53,7 @@ func NewServices(db *sql.DB, queries *gen.Queries, cfg *config.Config, redisClie
 		Webhook:          webhookService,
 		PayoutWorker:     payoutWorker,
 		WebhookWorker:    webhookWorker,
+		OutboxWorker:     outboxWorker,
 		Queries:          queries,
 		Queue:            q,
 	}
@@ -61,6 +64,7 @@ func (s *Services) StartWorkers(ctx context.Context) {
 		name   string
 		worker func(context.Context) error
 	}{
+		{"outbox", s.OutboxWorker.StartWorker},
 		{"payout", s.PayoutWorker.StartWorker},
 		{"webhook", s.WebhookWorker.StartWorker},
 	}

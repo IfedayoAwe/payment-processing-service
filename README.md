@@ -2,6 +2,56 @@
 
 Multi-currency payment processing system handling internal transfers between users and external transfers to bank accounts. Supports USD, EUR, and GBP currencies with exchange rate locking and double-entry ledger accounting.
 
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Client Application                      │
+└────────────────────────────┬────────────────────────────────┘
+                              │
+                              │ HTTP/REST
+                              │
+┌─────────────────────────────▼───────────────────────────────┐
+│                         API Server                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   Handlers   │──│  Middleware  │──│    Routes   │      │
+│  └──────┬───────┘  └──────────────┘  └──────────────┘      │
+└─────────┼───────────────────────────────────────────────────┘
+          │
+          │ Service Layer
+          │
+┌─────────▼───────────────────────────────────────────────────┐
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   Payment    │  │   Wallet     │  │   Ledger    │      │
+│  │   Service    │  │   Service    │  │   Service   │      │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
+│         │                  │                  │              │
+│  ┌──────┴───────┐  ┌──────┴───────┐  ┌──────┴───────┐     │
+│  │   External   │  │   Name       │  │   Webhook    │     │
+│  │   Transfer   │  │   Enquiry    │  │   Service    │     │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘     │
+└─────────┼──────────────────┼──────────────────┼─────────────┘
+          │                  │                  │
+          └──────────────────┼──────────────────┘
+                             │
+          ┌──────────────────┼──────────────────┐
+          │                  │                  │
+┌─────────▼──────────┐ ┌─────▼──────┐ ┌───────▼──────────┐
+│   PostgreSQL       │ │   Redis    │ │   Providers     │
+│   (SQLC)           │ │   (Queue)  │ │ (CurrencyCloud  │
+│                    │ │            │ │    dLocal)      │
+└────────────────────┘ └────────────┘ └─────────────────┘
+          │
+          │
+┌─────────▼───────────────────────────────────────────────────┐
+│              Background Workers                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   Outbox     │  │   Payout     │  │   Webhook    │      │
+│  │   Worker     │  │   Worker     │  │   Worker     │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ## Setup
 
 ### Prerequisites
@@ -42,6 +92,107 @@ GET /api/test/users
 ```
 
 This endpoint returns user IDs, PINs, wallet details, bank account information, and balances for easy testing.
+
+## Request Flow
+
+### Internal Transfer Request Flow
+
+```
+Client
+  │
+  ├─► POST /api/payments/internal
+  │   Headers: X-User-ID, Idempotency-Key
+  │   Body: {from_currency, to_account_number, to_bank_code, amount}
+  │
+  ├─► Handler: PaymentHandler.CreateInternalTransfer
+  │   │
+  │   ├─► Validate Request
+  │   ├─► Check Idempotency Key
+  │   └─► Service: PaymentService.CreateInternalTransfer
+  │       │
+  │       ├─► Get Exchange Rate (if different currency)
+  │       ├─► Find Recipient Wallet
+  │       ├─► Create Transaction (status: initiated)
+  │       │
+  │       └─► Process Based on Recipient
+  │           │
+  │           ├─► Same User, Different Currency
+  │           │   └─► Process Immediately
+  │           │       ├─► Lock Wallets
+  │           │       ├─► Create Ledger Entries
+  │           │       ├─► Update Balances
+  │           │       └─► Return (status: completed)
+  │           │
+  │           └─► Different User
+  │               └─► Return Transaction ID (requires PIN)
+  │
+  └─► POST /api/payments/:id/confirm (if different user)
+      Headers: X-User-ID
+      Body: {pin}
+      │
+      ├─► Handler: PaymentHandler.ConfirmTransaction
+      └─► Service: PaymentService.ConfirmInternalTransfer
+          │
+          ├─► Validate PIN
+          ├─► Check Expiration (10 min)
+          ├─► Lock Wallets
+          ├─► Create Ledger Entries
+          ├─► Update Balances
+          └─► Return (status: completed)
+```
+
+### External Transfer Request Flow
+
+```
+Client
+  │
+  ├─► POST /api/payments/external
+  │   Headers: X-User-ID, Idempotency-Key
+  │   Body: {from_currency, to_account_number, to_bank_code, amount}
+  │
+  ├─► Handler: PaymentHandler.CreateExternalTransfer
+  │   │
+  │   ├─► Validate Request
+  │   ├─► Check Idempotency Key
+  │   └─► Service: ExternalTransferService.CreateExternalTransfer
+  │       │
+  │       ├─► Get Exchange Rate
+  │       ├─► Create Transaction (status: initiated)
+  │       └─► Store Recipient Details
+  │
+  └─► POST /api/payments/:id/confirm
+      Headers: X-User-ID
+      Body: {pin}
+      │
+      ├─► Handler: PaymentHandler.ConfirmTransaction
+      └─► Service: ExternalTransferService.ConfirmExternalTransfer
+          │
+          ├─► Validate PIN
+          ├─► Check Expiration (10 min)
+          ├─► Begin DB Transaction
+          │   │
+          │   ├─► Lock Wallet
+          │   ├─► Check Funds
+          │   ├─► Create Debit Entry
+          │   ├─► Create Credit Entry (external system)
+          │   ├─► Update Balance
+          │   ├─► Update Transaction (status: pending)
+          │   └─► Create Outbox Entry (atomic)
+          │
+          └─► Commit Transaction
+              │
+              └─► Background Processing
+                  │
+                  ├─► Outbox Worker (every 2s)
+                  │   ├─► Get Unprocessed Entries
+                  │   ├─► Enqueue to Redis
+                  │   └─► Mark Processed
+                  │
+                  └─► Payout Worker
+                      ├─► Dequeue Job
+                      ├─► Call Provider API
+                      └─► Update Transaction (status: completed)
+```
 
 ## API Usage
 
@@ -312,7 +463,7 @@ Confirm an initiated transaction with PIN. Transaction must be in `initiated` st
 {
 	"data": {
 		"id": "tx-id",
-		"status": "completed",
+		"status": "pending",
 		"amount": 50.0,
 		"currency": "GBP",
 		"provider_reference": "{\"account_number\":\"9999999999\",\"bank_code\":\"044\"}"
@@ -321,7 +472,7 @@ Confirm an initiated transaction with PIN. Transaction must be in `initiated` st
 }
 ```
 
-Note: External transfers return `completed` status in the API response, but are processed asynchronously by a worker. Check transaction status later to see final provider details.
+Note: External transfers return `pending` status after confirmation and are processed asynchronously by a worker. The transaction status will change to `completed` once the payout worker successfully processes the transfer. Check transaction status later to see final provider details.
 
 #### 8. Get Transaction
 

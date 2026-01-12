@@ -116,29 +116,6 @@ func (pw *payoutWorker) ProcessPayoutJob(ctx context.Context, job *queue.Job) er
 		return fmt.Errorf("update transaction: %w", err)
 	}
 
-	webhookPayload, err := json.Marshal(map[string]interface{}{
-		"transaction_id":     payload.TransactionID,
-		"provider_reference": string(providerRef),
-		"status":             "completed",
-		"amount":             payload.Amount,
-		"currency":           payload.Currency,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal webhook payload: %w", err)
-	}
-
-	webhookJobPayload := queue.WebhookJobPayload{
-		ProviderName:      payoutResp.ProviderName,
-		EventType:         "payout.completed",
-		ProviderReference: string(providerRef),
-		TransactionID:     &payload.TransactionID,
-		Payload:           webhookPayload,
-	}
-
-	if err := pw.queue.Enqueue(ctx, queue.JobTypeWebhook, webhookJobPayload); err != nil {
-		return fmt.Errorf("enqueue webhook job: %w", err)
-	}
-
 	return nil
 }
 

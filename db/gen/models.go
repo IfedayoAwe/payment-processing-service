@@ -41,6 +41,16 @@ type LedgerEntry struct {
 	CreatedAt     time.Time      `db:"created_at" json:"created_at"`
 }
 
+type Outbox struct {
+	ID          string          `db:"id" json:"id"`
+	JobType     string          `db:"job_type" json:"job_type"`
+	Payload     json.RawMessage `db:"payload" json:"payload"`
+	Processed   bool            `db:"processed" json:"processed"`
+	ProcessedAt sql.NullTime    `db:"processed_at" json:"processed_at"`
+	RetryCount  int32           `db:"retry_count" json:"retry_count"`
+	CreatedAt   time.Time       `db:"created_at" json:"created_at"`
+}
+
 type Transaction struct {
 	ID                string         `db:"id" json:"id"`
 	IdempotencyKey    string         `db:"idempotency_key" json:"idempotency_key"`

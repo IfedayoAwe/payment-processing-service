@@ -13,6 +13,7 @@ type Querier interface {
 	CreateExternalSystemCreditEntry(ctx context.Context, arg CreateExternalSystemCreditEntryParams) (LedgerEntry, error)
 	CreateIdempotencyKey(ctx context.Context, arg CreateIdempotencyKeyParams) (IdempotencyKey, error)
 	CreateLedgerEntry(ctx context.Context, arg CreateLedgerEntryParams) (LedgerEntry, error)
+	CreateOutboxEntry(ctx context.Context, arg CreateOutboxEntryParams) (Outbox, error)
 	CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error)
 	CreateWallet(ctx context.Context, arg CreateWalletParams) (Wallet, error)
 	CreateWebhookEvent(ctx context.Context, arg CreateWebhookEventParams) (WebhookEvent, error)
@@ -20,6 +21,7 @@ type Querier interface {
 	GetBankAccountByID(ctx context.Context, id string) (BankAccount, error)
 	GetTransactionByID(ctx context.Context, id string) (Transaction, error)
 	GetTransactionByIdempotencyKey(ctx context.Context, idempotencyKey string) (Transaction, error)
+	GetUnprocessedOutboxEntries(ctx context.Context, limit int32) ([]Outbox, error)
 	GetUserByID(ctx context.Context, userID string) (User, error)
 	GetUserWalletsWithBankAccounts(ctx context.Context, userID string) ([]GetUserWalletsWithBankAccountsRow, error)
 	GetWalletBalance(ctx context.Context, arg GetWalletBalanceParams) (int64, error)
@@ -28,7 +30,9 @@ type Querier interface {
 	GetWalletByIDForUpdate(ctx context.Context, id string) (Wallet, error)
 	GetWalletByUserAndCurrency(ctx context.Context, arg GetWalletByUserAndCurrencyParams) (Wallet, error)
 	GetWalletByUserAndCurrencyForUpdate(ctx context.Context, arg GetWalletByUserAndCurrencyForUpdateParams) (Wallet, error)
+	IncrementOutboxRetryCount(ctx context.Context, id string) error
 	ListTransactionsByUser(ctx context.Context, arg ListTransactionsByUserParams) ([]Transaction, error)
+	MarkOutboxEntryProcessed(ctx context.Context, id string) error
 	UpdateTransactionFailure(ctx context.Context, arg UpdateTransactionFailureParams) error
 	UpdateTransactionStatus(ctx context.Context, arg UpdateTransactionStatusParams) error
 	UpdateTransactionWithProvider(ctx context.Context, arg UpdateTransactionWithProviderParams) error
