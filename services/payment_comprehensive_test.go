@@ -37,7 +37,7 @@ func TestPaymentService_GetTransactionByID(t *testing.T) {
 		genTx := gen.Transaction{
 			ID:             "tx_123",
 			IdempotencyKey: "key_123",
-			FromWalletID:   "wallet_1",
+			FromWalletID:   sql.NullString{String: "wallet_1", Valid: true},
 			ToWalletID:     sql.NullString{String: "wallet_2", Valid: true},
 			Type:           "internal",
 			Amount:         10000,
@@ -97,7 +97,7 @@ func TestPaymentService_GetTransactionByIdempotencyKey(t *testing.T) {
 		genTx := gen.Transaction{
 			ID:             "tx_123",
 			IdempotencyKey: "key_123",
-			FromWalletID:   "wallet_1",
+			FromWalletID:   sql.NullString{String: "wallet_1", Valid: true},
 			Type:           "external",
 			Amount:         5000,
 			Currency:       "EUR",
@@ -159,7 +159,7 @@ func TestPaymentService_ConfirmTransaction_Validation(t *testing.T) {
 		now := time.Now()
 		genTx := gen.Transaction{
 			ID:           "tx_123",
-			FromWalletID: "wallet_1",
+			FromWalletID: sql.NullString{String: "wallet_1", Valid: true},
 			Status:       "completed",
 			CreatedAt:    now,
 		}
@@ -190,7 +190,7 @@ func TestPaymentService_ConfirmTransaction_Validation(t *testing.T) {
 		oldTime := time.Now().Add(-11 * time.Minute)
 		genTx := gen.Transaction{
 			ID:           "tx_123",
-			FromWalletID: "wallet_1",
+			FromWalletID: sql.NullString{String: "wallet_1", Valid: true},
 			Status:       "initiated",
 			CreatedAt:    oldTime,
 		}
@@ -221,7 +221,7 @@ func TestPaymentService_ConfirmTransaction_Validation(t *testing.T) {
 		now := time.Now()
 		genTx := gen.Transaction{
 			ID:           "tx_123",
-			FromWalletID: "wallet_1",
+			FromWalletID: sql.NullString{String: "wallet_1", Valid: true},
 			Status:       "initiated",
 			CreatedAt:    now,
 		}
@@ -259,7 +259,7 @@ func TestPaymentService_ConfirmTransaction_Validation(t *testing.T) {
 		now := time.Now()
 		genTx := gen.Transaction{
 			ID:           "tx_123",
-			FromWalletID: "wallet_1",
+			FromWalletID: sql.NullString{String: "wallet_1", Valid: true},
 			Status:       "initiated",
 			CreatedAt:    now,
 		}
@@ -298,7 +298,7 @@ func TestPaymentService_ConfirmTransaction_Validation(t *testing.T) {
 		now := time.Now()
 		genTx := gen.Transaction{
 			ID:           "tx_123",
-			FromWalletID: "wallet_1",
+			FromWalletID: sql.NullString{String: "wallet_1", Valid: true},
 			Status:       "initiated",
 			CreatedAt:    now,
 		}
@@ -342,7 +342,7 @@ func TestPaymentService_ConfirmTransaction_Validation(t *testing.T) {
 		now := time.Now()
 		genTx := gen.Transaction{
 			ID:           "tx_123",
-			FromWalletID: "wallet_1",
+			FromWalletID: sql.NullString{String: "wallet_1", Valid: true},
 			Status:       "initiated",
 			CreatedAt:    now,
 		}
@@ -390,7 +390,7 @@ func TestPaymentService_GetTransactionHistory(t *testing.T) {
 		transactions := []gen.Transaction{
 			{
 				ID:           "tx_1",
-				FromWalletID: "wallet_1",
+				FromWalletID: sql.NullString{String: "wallet_1", Valid: true},
 				Amount:       10000,
 				Currency:     "USD",
 				Status:       "completed",
@@ -398,7 +398,7 @@ func TestPaymentService_GetTransactionHistory(t *testing.T) {
 			},
 			{
 				ID:           "tx_2",
-				FromWalletID: "wallet_1",
+				FromWalletID: sql.NullString{String: "wallet_1", Valid: true},
 				Amount:       5000,
 				Currency:     "EUR",
 				Status:       "pending",
@@ -433,7 +433,7 @@ func TestPaymentService_GetTransactionHistory(t *testing.T) {
 		transactions := []gen.Transaction{
 			{
 				ID:           "tx_3",
-				FromWalletID: "wallet_1",
+				FromWalletID: sql.NullString{String: "wallet_1", Valid: true},
 				Amount:       3000,
 				Currency:     "GBP",
 				Status:       "completed",

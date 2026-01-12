@@ -8,7 +8,10 @@ import (
 )
 
 func mapTransaction(t gen.Transaction) *models.Transaction {
-	fromWalletID := t.FromWalletID
+	var fromWalletID *string
+	if t.FromWalletID.Valid {
+		fromWalletID = &t.FromWalletID.String
+	}
 
 	var toWalletID *string
 	if t.ToWalletID.Valid {
@@ -39,7 +42,7 @@ func mapTransaction(t gen.Transaction) *models.Transaction {
 		ID:                t.ID,
 		IdempotencyKey:    t.IdempotencyKey,
 		TraceID:           traceID,
-		FromWalletID:      &fromWalletID,
+		FromWalletID:      fromWalletID,
 		ToWalletID:        toWalletID,
 		Type:              models.TransactionType(t.Type),
 		Amount:            t.Amount,

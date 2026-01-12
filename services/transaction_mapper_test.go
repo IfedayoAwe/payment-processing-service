@@ -19,7 +19,7 @@ func TestMapTransaction(t *testing.T) {
 		genTx := gen.Transaction{
 			ID:                "tx_123",
 			IdempotencyKey:    "key_123",
-			FromWalletID:      "wallet_from",
+			FromWalletID:      sql.NullString{String: "wallet_from", Valid: true},
 			ToWalletID:        sql.NullString{String: "wallet_to", Valid: true},
 			Type:              "internal",
 			Amount:            10000,
@@ -55,7 +55,7 @@ func TestMapTransaction(t *testing.T) {
 		genTx := gen.Transaction{
 			ID:                "tx_456",
 			IdempotencyKey:    "key_456",
-			FromWalletID:      "wallet_from",
+			FromWalletID:      sql.NullString{String: "wallet_from", Valid: true},
 			ToWalletID:        sql.NullString{Valid: false},
 			Type:              "external",
 			Amount:            5000,
@@ -84,7 +84,7 @@ func TestMapTransaction(t *testing.T) {
 		genTx := gen.Transaction{
 			ID:             "tx_789",
 			IdempotencyKey: "key_789",
-			FromWalletID:   "wallet_from",
+			FromWalletID:   sql.NullString{String: "wallet_from", Valid: true},
 			ToWalletID:     sql.NullString{Valid: false},
 			Type:           "internal",
 			Amount:         1000,
@@ -105,7 +105,7 @@ func TestMapTransaction(t *testing.T) {
 		genTx := gen.Transaction{
 			ID:             "tx_zero",
 			IdempotencyKey: "key_zero",
-			FromWalletID:   "wallet_from",
+			FromWalletID:   sql.NullString{String: "wallet_from", Valid: true},
 			ToWalletID:     sql.NullString{Valid: false},
 			Type:           "internal",
 			Amount:         1000,
@@ -126,7 +126,7 @@ func TestMapTransaction(t *testing.T) {
 		genTx := gen.Transaction{
 			ID:             "tx_neg",
 			IdempotencyKey: "key_neg",
-			FromWalletID:   "wallet_from",
+			FromWalletID:   sql.NullString{String: "wallet_from", Valid: true},
 			ToWalletID:     sql.NullString{Valid: false},
 			Type:           "internal",
 			Amount:         1000,
@@ -148,7 +148,7 @@ func TestMapTransaction(t *testing.T) {
 		genTx := gen.Transaction{
 			ID:             "tx_precise",
 			IdempotencyKey: "key_precise",
-			FromWalletID:   "wallet_from",
+			FromWalletID:   sql.NullString{String: "wallet_from", Valid: true},
 			ToWalletID:     sql.NullString{Valid: false},
 			Type:           "internal",
 			Amount:         1000,

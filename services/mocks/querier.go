@@ -193,3 +193,18 @@ func (m *MockQuerier) WithTx(tx *sql.Tx) gen.Querier {
 	}
 	return args.Get(0).(gen.Querier)
 }
+
+func (m *MockQuerier) IsJobProcessed(ctx context.Context, jobID string) (bool, error) {
+	args := m.Called(ctx, jobID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockQuerier) MarkJobProcessed(ctx context.Context, arg gen.MarkJobProcessedParams) (gen.ProcessedJob, error) {
+	args := m.Called(ctx, arg)
+	return args.Get(0).(gen.ProcessedJob), args.Error(1)
+}
+
+func (m *MockQuerier) CleanupExpiredJobs(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}

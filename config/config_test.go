@@ -13,7 +13,7 @@ func TestLoad(t *testing.T) {
 	os.Setenv("DATABASE_NAME", "test_db")
 	os.Setenv("DATABASE_USERNAME", "test_user")
 	os.Setenv("DATABASE_PASSWORD", "test_pass")
-	os.Setenv("REDIS_URL", "redis://test-redis:6379")
+	os.Setenv("RABBITMQ_URL", "amqp://guest:guest@test-rabbitmq:5672/")
 
 	defer func() {
 		os.Unsetenv("PORT")
@@ -22,7 +22,7 @@ func TestLoad(t *testing.T) {
 		os.Unsetenv("DATABASE_NAME")
 		os.Unsetenv("DATABASE_USERNAME")
 		os.Unsetenv("DATABASE_PASSWORD")
-		os.Unsetenv("REDIS_URL")
+		os.Unsetenv("RABBITMQ_URL")
 	}()
 
 	cfg := Load()
@@ -35,8 +35,8 @@ func TestLoad(t *testing.T) {
 		t.Errorf("Expected DatabaseHost to be 'test-host', got '%s'", cfg.DatabaseHost)
 	}
 
-	if cfg.RedisURL != "redis://test-redis:6379" {
-		t.Errorf("Expected RedisURL to be 'redis://test-redis:6379', got '%s'", cfg.RedisURL)
+	if cfg.RabbitMQURL != "amqp://guest:guest@test-rabbitmq:5672/" {
+		t.Errorf("Expected RabbitMQURL to be 'amqp://guest:guest@test-rabbitmq:5672/', got '%s'", cfg.RabbitMQURL)
 	}
 
 	expectedURL := "postgres://test_user:test_pass@test-host:5433/test_db?sslmode=disable"

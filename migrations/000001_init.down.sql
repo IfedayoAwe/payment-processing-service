@@ -1,3 +1,6 @@
+DROP INDEX IF EXISTS idx_processed_jobs_expires_at;
+DROP TABLE IF EXISTS processed_jobs;
+
 DROP INDEX IF EXISTS idx_outbox_job_type;
 DROP INDEX IF EXISTS idx_outbox_processed;
 DROP TABLE IF EXISTS outbox;

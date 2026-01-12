@@ -30,7 +30,7 @@
 ┌────────────────────────────┼────────────────────────────────────┐
 │                    Data & Infrastructure Layer                    │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │  PostgreSQL  │  │    Redis     │  │  Providers   │          │
+│  │  PostgreSQL  │  │   RabbitMQ   │  │  Providers   │          │
 │  │   (SQLC)     │  │   (Queue)    │  │ (CurrencyCloud│          │
 │  │              │  │              │  │    dLocal)   │          │
 │  └──────────────┘  └──────┬───────┘  └──────────────┘          │
@@ -121,7 +121,7 @@ User Request
                             └─► Outbox Worker (async)
                                     │
                                     ├─► Get Unprocessed Entries (FOR UPDATE SKIP LOCKED)
-                                    ├─► Enqueue to Redis Queue
+                                    ├─► Enqueue to RabbitMQ
                                     └─► Mark Outbox Entry Processed
                                             │
                                             └─► Payout Worker (async)
@@ -165,16 +165,16 @@ User Request
 │     FOR UPDATE SKIP LOCKED                                   │
 │     LIMIT 10                                                 │
 │  3. For each entry:                                          │
-│     - Enqueue to Redis Queue                                │
+│     - Enqueue to RabbitMQ                                    │
 │     - Mark as processed                                      │
 │  4. Commit Transaction                                       │
 └──────────────────────┬──────────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Redis Queue                                                 │
+│  RabbitMQ Queue                                             │
 │  ┌────────────────────────────────────────────┐            │
-│  │ queue:payout                                │            │
+│  │ queue: payout                               │            │
 │  │ [{"transaction_id": "...", ...}]           │            │
 │  └────────────────────────────────────────────┘            │
 └──────────────────────┬──────────────────────────────────────┘
@@ -322,11 +322,11 @@ Implements extensibility without overengineering. Provider interfaces are segreg
 
 **Why:** Multiple payment providers are needed for different currencies and regions. Clean interfaces allow adding new providers without changing core business logic.
 
-### 8. Redis for Async Work
+### 8. RabbitMQ for Async Work
 
-Chosen for simplicity and speed in a take-home, while clearly stating production alternatives (SQS, RabbitMQ, Kafka).
+RabbitMQ provides reliable message queuing with automatic reconnection, dead-letter queues, message durability, and consumer-side idempotency tracking.
 
-**Why:** Redis is simple to set up and provides the necessary queue semantics. In production, a dedicated message queue would provide better durability and features.
+**Why:** RabbitMQ offers production-ready features including automatic reconnection, message persistence, dead-letter queues for failed jobs, and built-in message acknowledgment. Consumer-side idempotency ensures jobs are processed exactly once even during reconnections.
 
 ### 9. No Float Math
 
@@ -408,11 +408,11 @@ Trace IDs are generated per request and propagated through logs, database, queue
 
 **Rationale:** Simplifies code and avoids precision issues in JSON serialization. In production, would use DECIMAL(20,8) for better precision and queryability.
 
-### 6. Single Redis Queue
+### 6. RabbitMQ with Database-Backed Idempotency
 
-**Trade-off:** Using Redis for both payout and webhook queues instead of separate queues.
+**Trade-off:** Using database-backed job ID tracking for idempotency instead of in-memory tracking.
 
-**Rationale:** Simpler setup for take-home. In production, would use separate queues with different priorities and retry policies.
+**Rationale:** Database-backed tracking ensures idempotency across multiple instances and survives service restarts. Job IDs are tracked for 24 hours with automatic cleanup of expired entries.
 
 ### 7. PIN Stored as Bcrypt Hash
 
@@ -479,7 +479,7 @@ Trace IDs are generated per request and propagated through logs, database, queue
 
 ### Infrastructure
 
-- Replace Redis with dedicated message queue (SQS, RabbitMQ, Kafka)
+- Add periodic cleanup job for expired processed_jobs entries
 - Add database replication and failover
 - Implement blue-green deployments
 - Add canary releases

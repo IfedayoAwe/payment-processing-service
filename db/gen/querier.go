@@ -10,6 +10,7 @@ import (
 )
 
 type Querier interface {
+	CleanupExpiredJobs(ctx context.Context) error
 	CreateExternalSystemCreditEntry(ctx context.Context, arg CreateExternalSystemCreditEntryParams) (LedgerEntry, error)
 	CreateIdempotencyKey(ctx context.Context, arg CreateIdempotencyKeyParams) (IdempotencyKey, error)
 	CreateLedgerEntry(ctx context.Context, arg CreateLedgerEntryParams) (LedgerEntry, error)
@@ -31,7 +32,9 @@ type Querier interface {
 	GetWalletByUserAndCurrency(ctx context.Context, arg GetWalletByUserAndCurrencyParams) (Wallet, error)
 	GetWalletByUserAndCurrencyForUpdate(ctx context.Context, arg GetWalletByUserAndCurrencyForUpdateParams) (Wallet, error)
 	IncrementOutboxRetryCount(ctx context.Context, id string) error
+	IsJobProcessed(ctx context.Context, jobID string) (bool, error)
 	ListTransactionsByUser(ctx context.Context, arg ListTransactionsByUserParams) ([]Transaction, error)
+	MarkJobProcessed(ctx context.Context, arg MarkJobProcessedParams) (ProcessedJob, error)
 	MarkOutboxEntryProcessed(ctx context.Context, id string) error
 	UpdateTransactionFailure(ctx context.Context, arg UpdateTransactionFailureParams) error
 	UpdateTransactionStatus(ctx context.Context, arg UpdateTransactionStatusParams) error

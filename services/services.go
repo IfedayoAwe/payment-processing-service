@@ -9,7 +9,6 @@ import (
 	"github.com/IfedayoAwe/payment-processing-service/providers"
 	"github.com/IfedayoAwe/payment-processing-service/queue"
 	"github.com/IfedayoAwe/payment-processing-service/utils"
-	"github.com/go-redis/redis/v8"
 )
 
 type Services struct {
@@ -26,12 +25,16 @@ type Services struct {
 	Queue            queue.Queue
 }
 
-func NewServices(db *sql.DB, queries *gen.Queries, cfg *config.Config, redisClient *redis.Client) *Services {
+func NewServices(db *sql.DB, queries *gen.Queries, cfg *config.Config) *Services {
 	processor := providers.SetupProcessor()
 
 	var q queue.Queue
-	if redisClient != nil {
-		q = queue.NewRedisQueue(redisClient)
+	if cfg.RabbitMQURL != "" {
+		var err error
+		q, err = queue.NewRabbitMQQueue(cfg.RabbitMQURL, queries)
+		if err != nil {
+			utils.Logger.Fatal().Err(err).Msg("failed to initialize rabbitmq queue")
+		}
 	}
 
 	ledgerService := newLedgerService(queries)

@@ -61,7 +61,7 @@ func (wh *webhookHandler) ReceiveWebhook(c echo.Context) error {
 	}
 
 	if err := wh.queue.Enqueue(c.Request().Context(), queue.JobTypeWebhook, payload); err != nil {
-		return utils.HandleError(c, err)
+		return utils.HandleError(c, utils.ServerErr(err))
 	}
 
 	return utils.Success(c, map[string]string{"status": "received"}, "webhook received successfully")

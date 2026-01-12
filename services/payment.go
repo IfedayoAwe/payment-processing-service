@@ -152,7 +152,7 @@ func (ps *paymentService) processInternalTransferImmediate(ctx context.Context, 
 	transaction, err := queries.CreateTransaction(ctx, gen.CreateTransactionParams{
 		IdempotencyKey: idempotencyKey,
 		TraceID:        sql.NullString{String: traceID, Valid: traceID != ""},
-		FromWalletID:   lockedFromWallet.ID,
+		FromWalletID:   sql.NullString{String: lockedFromWallet.ID, Valid: true},
 		ToWalletID:     sql.NullString{String: lockedToWallet.ID, Valid: true},
 		Type:           string(models.TransactionTypeInternal),
 		Amount:         toAmount.Amount,
@@ -252,7 +252,7 @@ func (ps *paymentService) createInitiatedInternalTransfer(ctx context.Context, f
 	transaction, err := ps.queries.CreateTransaction(ctx, gen.CreateTransactionParams{
 		IdempotencyKey: idempotencyKey,
 		TraceID:        sql.NullString{String: traceID, Valid: traceID != ""},
-		FromWalletID:   fromWallet.ID,
+		FromWalletID:   sql.NullString{String: fromWallet.ID, Valid: true},
 		ToWalletID:     sql.NullString{String: toWallet.ID, Valid: true},
 		Type:           string(models.TransactionTypeInternal),
 		Amount:         toAmount.Amount,
@@ -335,7 +335,11 @@ func (ps *paymentService) ConfirmTransaction(ctx context.Context, transactionID 
 		return nil, utils.BadRequestErr("transaction has expired")
 	}
 
-	fromWallet, err := ps.wallet.GetWalletByID(ctx, transaction.FromWalletID)
+	if !transaction.FromWalletID.Valid {
+		return nil, utils.BadRequestErr("transaction missing from wallet")
+	}
+
+	fromWallet, err := ps.wallet.GetWalletByID(ctx, transaction.FromWalletID.String)
 	if err != nil {
 		return nil, err
 	}
@@ -386,13 +390,21 @@ func (ps *paymentService) confirmInternalTransfer(ctx context.Context, transacti
 		return nil, utils.ServerErr(fmt.Errorf("parse to currency: %w", err))
 	}
 
+	if !transaction.ToWalletID.Valid {
+		return nil, utils.ServerErr(fmt.Errorf("to wallet ID not found in transaction"))
+	}
+
 	toWalletID := transaction.ToWalletID.String
 	toWallet, err := ps.wallet.GetWalletByID(ctx, toWalletID)
 	if err != nil {
 		return nil, err
 	}
 
-	fromWallet, err := ps.wallet.GetWalletByID(ctx, transaction.FromWalletID)
+	if !transaction.FromWalletID.Valid {
+		return nil, utils.ServerErr(fmt.Errorf("from wallet ID not found in transaction"))
+	}
+
+	fromWallet, err := ps.wallet.GetWalletByID(ctx, transaction.FromWalletID.String)
 	if err != nil {
 		return nil, err
 	}

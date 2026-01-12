@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY,
     idempotency_key TEXT UNIQUE NOT NULL,
     trace_id TEXT,
-    from_wallet_id TEXT NOT NULL,
+    from_wallet_id TEXT,
     to_wallet_id TEXT,
     type TEXT NOT NULL CHECK (type IN ('internal', 'external')),
     amount BIGINT NOT NULL CHECK (amount > 0),
@@ -59,7 +59,11 @@ CREATE TABLE IF NOT EXISTS transactions (
     exchange_rate NUMERIC(20, 8),
     failure_reason TEXT,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CHECK (
+        (type = 'internal' AND from_wallet_id IS NOT NULL AND to_wallet_id IS NOT NULL) OR
+        (type = 'external' AND (from_wallet_id IS NOT NULL OR to_wallet_id IS NOT NULL))
+    )
 );
 
 CREATE INDEX IF NOT EXISTS idx_transactions_idempotency_key ON transactions(idempotency_key);
@@ -124,3 +128,11 @@ CREATE TABLE IF NOT EXISTS outbox (
 
 CREATE INDEX IF NOT EXISTS idx_outbox_processed ON outbox(processed, created_at);
 CREATE INDEX IF NOT EXISTS idx_outbox_job_type ON outbox(job_type, processed);
+
+CREATE TABLE IF NOT EXISTS processed_jobs (
+    job_id TEXT PRIMARY KEY,
+    processed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_processed_jobs_expires_at ON processed_jobs(expires_at);

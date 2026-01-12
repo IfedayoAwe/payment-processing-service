@@ -40,6 +40,11 @@ func (m *mockQueue) Retry(ctx context.Context, job *queue.Job) error {
 	return args.Error(0)
 }
 
+func (m *mockQueue) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
 func TestOutboxWorker_ProcessOutboxEntry_Payout(t *testing.T) {
 	mockQueries := &gen.Queries{}
 	mockQueue := new(mockQueue)

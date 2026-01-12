@@ -37,7 +37,7 @@ Multi-currency payment processing system handling internal transfers between use
           ┌──────────────────┼──────────────────┐
           │                  │                  │
 ┌─────────▼──────────┐ ┌─────▼──────┐ ┌───────▼──────────┐
-│   PostgreSQL       │ │   Redis    │ │   Providers     │
+│   PostgreSQL       │ │  RabbitMQ  │ │   Providers     │
 │   (SQLC)           │ │   (Queue)  │ │ (CurrencyCloud  │
 │                    │ │            │ │    dLocal)      │
 └────────────────────┘ └────────────┘ └─────────────────┘
@@ -66,7 +66,7 @@ Multi-currency payment processing system handling internal transfers between use
 git clone git@github.com:IfedayoAwe/payment-processing-service.git
 cd payment-processing-service
 
-# Start all services (PostgreSQL, Redis, API)
+# Start all services (PostgreSQL, RabbitMQ, API)
 docker-compose up --build
 
 # The service will automatically:
@@ -185,7 +185,7 @@ Client
                   │
                   ├─► Outbox Worker (every 2s)
                   │   ├─► Get Unprocessed Entries
-                  │   ├─► Enqueue to Redis
+                  │   ├─► Enqueue to RabbitMQ
                   │   └─► Mark Processed
                   │
                   └─► Payout Worker
@@ -639,21 +639,21 @@ make test
 # Run linter
 make lint
 
-# Run locally (requires PostgreSQL and Redis)
+# Run locally (requires PostgreSQL and RabbitMQ)
 make run
 ```
 
 ### Environment Variables
 
-| Variable            | Default                  | Description          |
-| ------------------- | ------------------------ | -------------------- |
-| `PORT`              | `8080`                   | Server port          |
-| `DATABASE_HOST`     | `localhost`              | PostgreSQL host      |
-| `DATABASE_PORT`     | `5432`                   | PostgreSQL port      |
-| `DATABASE_NAME`     | `payment_service`        | Database name        |
-| `DATABASE_USERNAME` | `postgres`               | Database user        |
-| `DATABASE_PASSWORD` | `password`               | Database password    |
-| `REDIS_URL`         | `redis://localhost:6379` | Redis connection URL |
+| Variable            | Default                              | Description             |
+| ------------------- | ------------------------------------ | ----------------------- |
+| `PORT`              | `8080`                               | Server port             |
+| `DATABASE_HOST`     | `localhost`                          | PostgreSQL host         |
+| `DATABASE_PORT`     | `5432`                               | PostgreSQL port         |
+| `DATABASE_NAME`     | `payment_service`                    | Database name           |
+| `DATABASE_USERNAME` | `postgres`                           | Database user           |
+| `DATABASE_PASSWORD` | `password`                           | Database password       |
+| `RABBITMQ_URL`      | `amqp://guest:guest@localhost:5672/` | RabbitMQ connection URL |
 
 ### Database Migrations
 

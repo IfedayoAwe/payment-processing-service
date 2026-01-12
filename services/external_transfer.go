@@ -74,7 +74,7 @@ func (ets *externalTransferService) CreateExternalTransfer(ctx context.Context, 
 	transaction, err := ets.queries.CreateTransaction(ctx, gen.CreateTransactionParams{
 		IdempotencyKey: idempotencyKey,
 		TraceID:        sql.NullString{String: traceID, Valid: traceID != ""},
-		FromWalletID:   fromWallet.ID,
+		FromWalletID:   sql.NullString{String: fromWallet.ID, Valid: true},
 		ToWalletID:     sql.NullString{Valid: false},
 		Type:           string(models.TransactionTypeExternal),
 		Amount:         toAmount.Amount,
@@ -136,7 +136,11 @@ func (ets *externalTransferService) confirmExternalTransfer(ctx context.Context,
 		return nil, utils.ServerErr(fmt.Errorf("invalid exchange rate: %w", err))
 	}
 
-	fromWallet, err := ets.wallet.GetWalletByID(ctx, transaction.FromWalletID)
+	if !transaction.FromWalletID.Valid {
+		return nil, utils.ServerErr(fmt.Errorf("from wallet ID not found in transaction"))
+	}
+
+	fromWallet, err := ets.wallet.GetWalletByID(ctx, transaction.FromWalletID.String)
 	if err != nil {
 		return nil, err
 	}

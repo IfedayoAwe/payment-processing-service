@@ -1,5 +1,12 @@
 -- Seed data for testing
 -- Idempotent: Can be run multiple times without creating duplicates
+--
+-- Balance Validation:
+-- - All transactions have balanced ledger entries (debits = credits per currency)
+-- - External transactions: debit user wallet, credit external system (balances external system)
+-- - Internal transactions: debit sender wallet, credit receiver wallet (same currency amounts)
+-- - External system balances are cumulative per currency (negative = we owe external system)
+-- - Wallet balances are calculated from ledger entries at the end
 
 SET timezone = 'UTC';
 
@@ -67,13 +74,12 @@ ON CONFLICT (user_id, currency, bank_account_id) DO NOTHING;
 -- ============================================
 -- TRANSACTIONS (user_1 only)
 -- ============================================
--- Initial funding transactions (self-transfers representing deposits)
--- These are placeholders for the ledger entries that credit the wallets
+-- Initial funding transactions (external deposits from external system)
 INSERT INTO transactions (id, idempotency_key, from_wallet_id, to_wallet_id, type, amount, currency, status, provider_name, provider_reference, exchange_rate, created_at, updated_at)
 VALUES 
-    ('tx_user1_fund_usd', 'idemp_key_fund_usd', 'wallet_user1_usd', 'wallet_user1_usd', 'internal', 1000000, 'USD', 'completed', NULL, NULL, 1.00000000, NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'),
-    ('tx_user1_fund_eur', 'idemp_key_fund_eur', 'wallet_user1_eur', 'wallet_user1_eur', 'internal', 850000, 'EUR', 'completed', NULL, NULL, 1.00000000, NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'),
-    ('tx_user1_fund_gbp', 'idemp_key_fund_gbp', 'wallet_user1_gbp', 'wallet_user1_gbp', 'internal', 750000, 'GBP', 'completed', NULL, NULL, 1.00000000, NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days')
+    ('tx_user1_fund_usd', 'idemp_key_fund_usd', NULL, 'wallet_user1_usd', 'external', 1000000, 'USD', 'completed', 'currencycloud', 'DEPOSIT-USD-001', 1.00000000, NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'),
+    ('tx_user1_fund_eur', 'idemp_key_fund_eur', NULL, 'wallet_user1_eur', 'external', 850000, 'EUR', 'completed', 'currencycloud', 'DEPOSIT-EUR-001', 1.00000000, NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days'),
+    ('tx_user1_fund_gbp', 'idemp_key_fund_gbp', NULL, 'wallet_user1_gbp', 'external', 750000, 'GBP', 'completed', 'dlocal', 'DEPOSIT-GBP-001', 1.00000000, NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days')
 ON CONFLICT (id) DO NOTHING;
 
 -- Transaction 1: Internal transfer USD -> EUR (completed)
@@ -103,12 +109,15 @@ ON CONFLICT (id) DO NOTHING;
 -- ============================================
 -- LEDGER ENTRIES (user_1 only)
 -- ============================================
--- Initial funding ledger entries (credits to give John Doe starting balances)
+-- Initial funding ledger entries (external deposits: debit external system, credit user wallets)
 INSERT INTO ledger_entries (id, wallet_id, transaction_id, amount, currency, account_type, balance_before, balance_after, created_at)
 VALUES 
-    ('ledger_fund_usd', 'wallet_user1_usd', 'tx_user1_fund_usd', 1000000, 'USD', 'user_wallet', 0, 1000000, NOW() - INTERVAL '5 days'),
-    ('ledger_fund_eur', 'wallet_user1_eur', 'tx_user1_fund_eur', 850000, 'EUR', 'user_wallet', 0, 850000, NOW() - INTERVAL '5 days'),
-    ('ledger_fund_gbp', 'wallet_user1_gbp', 'tx_user1_fund_gbp', 750000, 'GBP', 'user_wallet', 0, 750000, NOW() - INTERVAL '5 days')
+    ('ledger_fund_usd_debit', NULL, 'tx_user1_fund_usd', -1000000, 'USD', 'external_wallet', 0, -1000000, NOW() - INTERVAL '5 days'),
+    ('ledger_fund_usd_credit', 'wallet_user1_usd', 'tx_user1_fund_usd', 1000000, 'USD', 'user_wallet', 0, 1000000, NOW() - INTERVAL '5 days'),
+    ('ledger_fund_eur_debit', NULL, 'tx_user1_fund_eur', -850000, 'EUR', 'external_wallet', 0, -850000, NOW() - INTERVAL '5 days'),
+    ('ledger_fund_eur_credit', 'wallet_user1_eur', 'tx_user1_fund_eur', 850000, 'EUR', 'user_wallet', 0, 850000, NOW() - INTERVAL '5 days'),
+    ('ledger_fund_gbp_debit', NULL, 'tx_user1_fund_gbp', -750000, 'GBP', 'external_wallet', 0, -750000, NOW() - INTERVAL '5 days'),
+    ('ledger_fund_gbp_credit', 'wallet_user1_gbp', 'tx_user1_fund_gbp', 750000, 'GBP', 'user_wallet', 0, 750000, NOW() - INTERVAL '5 days')
 ON CONFLICT (id) DO NOTHING;
 
 -- Transaction 1: USD -> EUR (internal)
@@ -125,18 +134,18 @@ VALUES
     ('ledger_2_credit', 'wallet_user1_gbp', 'tx_user1_2', 30000, 'GBP', 'user_wallet', 750000, 780000, NOW() - INTERVAL '1 day')
 ON CONFLICT (id) DO NOTHING;
 
--- Transaction 3: External USD transfer
+-- Transaction 3: External USD transfer (debit user wallet, credit external system)
 INSERT INTO ledger_entries (id, wallet_id, transaction_id, amount, currency, account_type, balance_before, balance_after, created_at)
 VALUES 
     ('ledger_3_debit', 'wallet_user1_usd', 'tx_user1_3', -100000, 'USD', 'user_wallet', 941176, 841176, NOW() - INTERVAL '12 hours'),
-    ('ledger_3_credit', NULL, 'tx_user1_3', 100000, 'USD', 'external_wallet', 0, 100000, NOW() - INTERVAL '12 hours')
+    ('ledger_3_credit', NULL, 'tx_user1_3', 100000, 'USD', 'external_wallet', -1000000, -900000, NOW() - INTERVAL '12 hours')
 ON CONFLICT (id) DO NOTHING;
 
--- Transaction 4: External EUR transfer
+-- Transaction 4: External EUR transfer (debit user wallet, credit external system)
 INSERT INTO ledger_entries (id, wallet_id, transaction_id, amount, currency, account_type, balance_before, balance_after, created_at)
 VALUES 
     ('ledger_4_debit', 'wallet_user1_eur', 'tx_user1_4', -50000, 'EUR', 'user_wallet', 866029, 816029, NOW() - INTERVAL '6 hours'),
-    ('ledger_4_credit', NULL, 'tx_user1_4', 50000, 'EUR', 'external_wallet', 0, 50000, NOW() - INTERVAL '6 hours')
+    ('ledger_4_credit', NULL, 'tx_user1_4', 50000, 'EUR', 'external_wallet', -850000, -800000, NOW() - INTERVAL '6 hours')
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================

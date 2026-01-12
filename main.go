@@ -37,17 +37,14 @@ func run() error {
 
 	queries, dbConn := db.InitDBWithDeps(cfg, db.DefaultDependencies)
 
-	redisClient, err := setupRedis(&cfg)
-	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to initialize redis")
-	}
+	services := service.NewServices(dbConn, queries, &cfg)
 	defer func() {
-		if err := redisClient.Close(); err != nil {
-			logger.Error().Err(err).Msg("error closing redis")
+		if services.Queue != nil {
+			if err := services.Queue.Close(); err != nil {
+				logger.Error().Err(err).Msg("error closing queue")
+			}
 		}
 	}()
-
-	services := service.NewServices(dbConn, queries, &cfg, redisClient.GetClient())
 	newHandlers := handlers.NewHandlers(services)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -70,8 +67,4 @@ func run() error {
 	logger.Info().Str("port", port).Msg("Payment Processing Service running")
 
 	return e.Start(":" + port)
-}
-
-func setupRedis(cfg *config.Config) (*utils.Redis, error) {
-	return utils.NewRedis(cfg)
 }

@@ -20,8 +20,8 @@ type Config struct {
 	DatabasePassword string
 	DatabaseURL      string
 
-	// Redis
-	RedisURL string
+	// RabbitMQ
+	RabbitMQURL string
 }
 
 func Load() Config {
@@ -36,7 +36,7 @@ func Load() Config {
 		DatabaseName:     getEnv("DATABASE_NAME", "payment_service"),
 		DatabaseUser:     getEnv("DATABASE_USERNAME", "postgres"),
 		DatabasePassword: getEnv("DATABASE_PASSWORD", "password"),
-		RedisURL:         getEnv("REDIS_URL", "redis://localhost:6379"),
+		RabbitMQURL:      getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
 	}
 
 	// Construct PostgreSQL DSN

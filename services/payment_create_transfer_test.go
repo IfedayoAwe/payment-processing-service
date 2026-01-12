@@ -36,7 +36,7 @@ func TestPaymentService_CreateInternalTransfer_Comprehensive(t *testing.T) {
 		existingTx := gen.Transaction{
 			ID:             "tx_existing",
 			IdempotencyKey: "key_123",
-			FromWalletID:   "wallet_1",
+			FromWalletID:   sql.NullString{String: "wallet_1", Valid: true},
 			Type:           "internal",
 			Amount:         10000,
 			Currency:       "USD",

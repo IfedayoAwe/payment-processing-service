@@ -6,19 +6,19 @@ services:
       dockerfile: Dockerfile
     env_file: .env
     environment:
-      - DATABASE_HOST=postgres
-      - DATABASE_PORT=5432
-      - DATABASE_NAME=payment_service
-      - DATABASE_USERNAME=postgres
-      - DATABASE_PASSWORD=password
-      - REDIS_URL=redis://redis:6379
-      - PORT=8080
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: payment_service
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: password
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      PORT: "8080"
     ports:
       - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      rabbitmq:
         condition: service_healthy
 
   # === POSTGRES ===
@@ -38,15 +38,20 @@ services:
       interval: 5s
       retries: 5
 
-  # === REDIS ===
-  redis:
-    image: redis:7
-    container_name: payment-redis
+  # === RABBITMQ ===
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: payment-rabbitmq
     ports:
-      - "6379:6379"
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
       retries: 5
 
 volumes:

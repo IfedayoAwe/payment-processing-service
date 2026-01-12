@@ -22,7 +22,7 @@ RETURNING id, idempotency_key, trace_id, from_wallet_id, to_wallet_id, type, amo
 type CreateTransactionParams struct {
 	IdempotencyKey string         `db:"idempotency_key" json:"idempotency_key"`
 	TraceID        sql.NullString `db:"trace_id" json:"trace_id"`
-	FromWalletID   string         `db:"from_wallet_id" json:"from_wallet_id"`
+	FromWalletID   sql.NullString `db:"from_wallet_id" json:"from_wallet_id"`
 	ToWalletID     sql.NullString `db:"to_wallet_id" json:"to_wallet_id"`
 	Type           string         `db:"type" json:"type"`
 	Amount         int64          `db:"amount" json:"amount"`
